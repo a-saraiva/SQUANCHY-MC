@@ -1,0 +1,12 @@
+#!/bin/bash
+
+#PBS -q express
+#PBS -l ncpus=16
+#PBS -l mem=128GB
+#PBS -l jobfs=1GB
+#PBS -l walltime=24:00:00
+#PBS -l software=python
+#PBS -l wd
+
+module load python3/3.6.7
+python3 file.py > /path_to_output
