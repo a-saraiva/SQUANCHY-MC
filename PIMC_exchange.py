@@ -70,7 +70,9 @@ from copy import deepcopy
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import cm
-import time
+import multiprocessing as mp
+import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor
 
 # RC - params . Better plots
 def SetPlotParams():
@@ -90,58 +92,6 @@ def SetPlotParams():
     plt.rcParams['figure.figsize'] =  6.8, 8.3
 # %%
 SetPlotParams()
-
-
-# ## List of Constants
-
-# In[126]:
-
-
-"""Parameters, units: ueV, nm, ns"""
-print('Setting initial constants')
-#N = 80 #time_steps and number of tried changes during one sweep.
-num_path = 1000 #number of sweeps
-print('num_paths = ', num_path)
-
-#beta = 0.1 # imaginary total time? (/hbar?)
-tau = 10 ** (-6) #ns
-print('tau = ', tau, '(ns)')
-interaction = 1 # Turn on/off electron-electron interaction (1 or 0)
-h= np.array([1,.7,.08])
-print('Displacement vector (h) =', h , 'nm')
-
-eec = 1.23*10**5
-print('Electron-electron coupling constant (eec) =', eec, 'ueV')
-me = 5.686 * 10 **(-6) # ueV ns^2/nm^2 - electron mass
-print('me = ', repr(np.round(me,9)), 'ueV*ns^2/nm^2' )
-mass = 1 # Effective mass on/off
-
-if mass == 1:
-        meff= 0.2 * me #effective electron mass in Silicon
-        ml = 0.98 * me #effective mass in longitudinal k-direction
-        mt = 0.19 * me #effective mass in transverse k-direction
-        mx = mt #effective mass in x-direction
-        my = mt #effective mass in y-direction
-        mz = ml #effective mass in z-direction
-        m = np.array([mx,my,mz])
-        print('Effective mass vector (m) = ', m,'*me' )
-else:
-        print('No Mass')
-
-pot_step = 3 * 10**6 #ueV - Si/SiO2 interfac
-print('Step voltage height (pot_step) = ', pot_step,' $ueV$' )
-hbar = 0.6582 # ueV * ns
-a = 0.543 #nm - lattice constant in silicon
-w = 4000/hbar
-q = 10**6 # ueV
-lamda = 0.5 * hbar**2 / me
-r_0 = np.sqrt(hbar / (me*w))
-E_z = 2 * 10**3 #ueV/nm - Electric field in z direction
-# %%
-slope = E_z
-V = pot_step
-x_0 = 1.5*r_0
-print('Lattice constant (a)=', a, 'nm')
 
 
 # ## Methods for path generation, crossings and staying
@@ -253,15 +203,6 @@ def dV_het(point): # 3d gradient of field @ position
 def dV_zero(point):
     return np.multiply(bias,[1,1,1])
 
-
-'''Define grid and HRL potential'''
-xs = np.load('UNSW4_1st withBG TEST ephiQWM UNSW4_1st structure 2nm 800x800 - 10-4-12-4.npz')['xs']
-ys = np.load('UNSW4_1st withBG TEST ephiQWM UNSW4_1st structure 2nm 800x800 - 10-4-12-4.npz')['ys']
-zs = np.load('UNSW4_1st withBG TEST ephiQWM UNSW4_1st structure 2nm 800x800 - 10-4-12-4.npz')['zs']
-ephi = 10**6 * np.load('UNSW4_1st withBG TEST ephiQWM UNSW4_1st structure 2nm 800x800 - 10-4-12-4.npz')['ephi']
-
-interpolate = rgi(points = (xs,ys,zs), values = ephi, bounds_error = False, method = 'linear') #options 'linear' , 'nearest'
-
 # Heterostructure interface potential (z-direction) leading to airy functions as wave function.
 def V_hrl(path):
     return interpolate(path.T) + V_step(path[2,:])
@@ -269,23 +210,8 @@ def V_hrl(path):
 '''V_field = V_doubledot
 dV_field = dV_doubledot
 print('Double Dot')'''
-V_field = V_hrl
-dV_field = dV_zero
-print('HRL')
 
 
-
-
-'''Non-vectorized old implementations'''
-# def V_step(z):
-#     return(V / (np.exp(-a*z) + 1) + interpolate((0,0,z)))
-# def V_hrl(point):
-#     return interpolate(point)[0] + V_step(-point[2])
-
-
-# ### HRL - Potential
-
-# In[129]:
 
 
 def RefineGrid(xs,ys,zs):
@@ -632,11 +558,7 @@ def exchangeUpdate(path1 , path2):
     else:
 #         print('Stable with probability ' , np.exp(-(delta_s/hbar) ))      
         return path1 , path2, 0
-    
-    
-    
-   
-    
+
 
 def sweep(path1,path2, So,GridFunc,min_array):
     '''Computes the action given two electron paths
@@ -645,7 +567,6 @@ def sweep(path1,path2, So,GridFunc,min_array):
        outputs: newPath1, newPath2 (3N-arrays)
                 delta_s - difference between new action and old action
     '''
-    
     #Old ------ Computing the action
 #     So = find_action(path1,path2)   #--- not necessary if the action is saved
 #     Sn = find_action(new_path1,new_path2)
@@ -657,7 +578,6 @@ def sweep(path1,path2, So,GridFunc,min_array):
 
     delta_s = Sn - So 
 #     print(So, Sn , delta_s)          
-               
     if delta_s < 0: # always accepting if action lowered
 #         print('Minor action' , np.exp(-(delta_s/hbar) ))
         return new_path1 , new_path2 , delta_s
@@ -670,7 +590,7 @@ def sweep(path1,path2, So,GridFunc,min_array):
         return path1 , path2, 0
 
 
-def PIMC(NumRun, pathLength, NumMeasures, SavedPaths,T_length):
+def PIMC(NumRun, pathLength, NumMeasures,T_length):
     '''Excute path integral montecarlo
      Inputs: NumRun (int) - max num runs
              pathLenght - number of time beads
@@ -760,57 +680,134 @@ def PIMC(NumRun, pathLength, NumMeasures, SavedPaths,T_length):
     return p1, p2, S_arr
 
 
-    #Paths_1 = np.array(Paths_1)
-    #Paths_2 = np.array(Paths_2)
 
-    '''Plotting labels -debugging'''
-    #axarr[0].set_xlabel('$\\tau$')
-    #axarr[0].set_ylabel('$x$')
+'''Start coding'''
 
-    #axarr[1].set_xlabel('$\\tau$')
-    #axarr[1].set_ylabel('$x$')
-    
-# print('increased, decreased, stables')
-# print(increased, decreased, stables)
+'''Set up model parameters
+Parameters, units: ueV, nm, ns'''
+
+'''Defining potentials and Grid look-up tables'''
 
 
-#Generating initial conditions, and potentials
-MaxRun = 1000000
-pathLength = 1000
-NumMeasures = 10000
-SavedPaths = 10000
-T_length = 20
-start_time = time.time()
+
+print('Setting initial constants')
+#beta = 0.1 # imaginary total time? (/hbar?)
+tau = 10 ** (-6) #ns
+interaction = 1 # Turn on/off electron-electron interaction (1 or 0)
+h= np.array([1,.7,.08]) # nm random displacement vector
+eec = 1.23*10**5 # ueV electron electron coupling constant
+me = 5.686 * 10 **(-6) # ueV ns^2/nm^2 - electron mass
+mass = 1 # Effective mass on/off
+if mass == 1:
+        meff= 0.2 * me #effective electron mass in Silicon
+        ml = 0.98 * me #effective mass in longitudinal k-direction
+        mt = 0.19 * me #effective mass in transverse k-direction
+        mx = mt #effective mass in x-direction
+        my = mt #effective mass in y-direction
+        mz = ml #effective mass in z-direction
+        m = np.array([mx,my,mz])
+        print('Effective mass vector (m) = ', m,'*me' )
+else:
+        print('No Mass')
+pot_step = 3 * 10**6 #ueV - Si/SiO2 interfac
+hbar = 0.6582 # ueV * ns
+a = 0.543 #nm - lattice constant in silicon
+w = 4000/hbar
+q = 10**6 # ueV
+lamda = 0.5 * hbar**2 / me
+r_0 = np.sqrt(hbar / (me*w))
+E_z = 2 * 10**3 #ueV/nm - Electric field in z direction
+slope = E_z
+V = pot_step
+x_0 = 1.5*r_0
+V_field = V_hrl
+
+print('tau = ', tau, '(ns)')
+print('Displacement vector (h) =', h , 'nm')
+print('Electron-electron coupling constant (eec) =', eec, 'ueV')
+print('me = ', repr(np.round(me,9)), 'ueV*ns^2/nm^2' )
+print('Step voltage height (pot_step) = ', pot_step,' $ueV$' )
+print('Lattice constant (a)=', a, 'nm')
+
+'''Define grid and uploading HRL potential'''
+print('Defining potentials and setting up look up tables')
+
+
+'''Define grid and uploading HRL potential'''
+xs = np.load('UNSW4_1st withBG TEST ephiQWM UNSW4_1st structure 2nm 800x800 - 10-4-12-4.npz')['xs']
+ys = np.load('UNSW4_1st withBG TEST ephiQWM UNSW4_1st structure 2nm 800x800 - 10-4-12-4.npz')['ys']
+zs = np.load('UNSW4_1st withBG TEST ephiQWM UNSW4_1st structure 2nm 800x800 - 10-4-12-4.npz')['zs']
+ephi = 10**6 * np.load('UNSW4_1st withBG TEST ephiQWM UNSW4_1st structure 2nm 800x800 - 10-4-12-4.npz')['ephi']
+
+interpolate = rgi(points = (xs,ys,zs), values = ephi, bounds_error = False, method = 'linear') #options 'linear' , 'nearest'
+
+'''Defining potentials and Grid look-up tables'''
+
 XS, YS , ZS, Grid =  RefineGrid(xs,ys,zs)
 V_HRL = ComputeGridFunction(V_hrl, Grid, XS, YS , ZS,False)
+
+
+
+# interpolate = rgi(points = (xs,ys,zs), values = ephi, bounds_error = False, method = 'linear') #options 'linear' , 'nearest'
+print('-----Defining potentials and setting up look up tables-----')
+ 
+print('----- Writing montecarlo parameters -----')
+'''Defining montecarlo variables'''
+MAX_Workers = 25 # Max number of procesors
+Number_Samples = 1000 #Number of paths to sample
+
+MaxRun = 10**6 #Maximum number of runs --- tipically 10**6 for a 1000 path
+pathLength = 10**3 #Path Lenght in time slices
+#Meaurements are executed in order to probe if the code has already converged
+NumMeasures = 10**4 #Number of times between measurements . Two orders of magnitude less than MaxRun
+T_length = 20 # lenght of the time slice moved at each sweep update. 
+              #T_lenght should have 2 orders of magnitude less than pathLenght for better efficiency
+print('Maximum workers = ',MAX_Workers )
+print('Number_Samples = ',Number_Samples )
+print('MaxRun = ',MaxRun )
+print('NumMeasures = ',NumMeasures)
+print('T_length = ',T_length)
+
 min_array = CreateMinArray(T_length)
 min_array2 = CreateMinArray(pathLength)
 
 
-p1,p2,S_arr = PIMC(MaxRun, pathLength, NumMeasures, SavedPaths,T_length)
-print("Value of the action. ----", S_arr[-20:])
-print("--- %s seconds ---" % (time.time() - start_time))
+'''Executing PIMC on multiple machines'''
 
 
-# In[183]:
+#Generating initial conditions, and potentials
+
+def mainFunc():
+    
+    print('---- Executing PIMC -----')
+    Ps = []
+    with ThreadPoolExecutor(max_workers=MAX_Workers) as executor:
+        returns = [executor.submit(PIMC,MaxRun, pathLength, NumMeasures, T_length) for _ in range(Number_Samples)]
+        for r in concurrent.futures.as_completed(returns):
+            Ps.append(r.result())
+
+            
+    print('Processing and saving results')
+    '''Processing results'''
+    Ps = np.array(Ps)
+    Paths1 = np.array(Ps[:,0])
+    Paths2 = np.array(Ps[:,1])
+
+    P1 = np.zeros((len(Paths1),3,pathLength))
+    P2 = np.zeros((len(Paths1),3,pathLength))
+    
+    for i in range(len(Paths1)):
+        P1[i,:,:] = Paths1[i]
+        P2[i,:,:] = Paths2[i]
+    
+    
+    nm1 = 'Paths/' + repr(Number_Samples) + 'Paths1'
+    nm2 = 'Paths/' + repr(Number_Samples) + 'Paths2'
+    
+    '''Saving results in the Paths folder'''
+    np.save(nm1, P1 )
+    np.save(nm2, P2 )
 
 
-fig, ax = plt.subplots(1,1)
-ax.plot(range(len(S_arr)),np.log10(S_arr))
-#Axis Labels
-ax.set_ylabel('$\log_{10}(S)$')
-ax.set_xlabel('Iterations ($\\times'+ repr(NumMeasures) +'$)')
 
-plt.show()
-# In[185]:
-
-
-fig, ax = plt.subplots(1,1)
-
-ax.plot( p1[0,:], np.array(range(pathLength))*tau ,'b-')
-ax.plot( p2[0,:], np.array(range(pathLength))*tau ,'r-')
-ax.set_ylabel('$\\tau (i*ns)$')
-ax.set_xlabel('$x (nm)$')
-
-
-plt.show()
+mainFunc()
