@@ -753,8 +753,8 @@ print('-----Defining potentials and setting up look up tables-----')
  
 print('----- Writing montecarlo parameters -----')
 '''Defining montecarlo variables'''
-MAX_Workers = 25 # Max number of procesors
-Number_Samples = 1000 #Number of paths to sample
+MAX_Workers = 5 # Max number of procesors
+Number_Samples = 2 #Number of paths to sample
 
 MaxRun = 10**6 #Maximum number of runs --- tipically 10**6 for a 1000 path
 pathLength = 10**3 #Path Lenght in time slices
