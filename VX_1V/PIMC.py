@@ -1012,8 +1012,8 @@ V_field = V_hrl
 
 print('Creating Grids and setting PIMC parameters')
 '''Defining montecarlo variables'''
-MAX_Workers = 10 # Max number of procesors
-Number_Samples = 2 #Number of paths to sample
+MAX_Workers = 5 # Max number of procesors
+Number_Samples = 60 #Number of paths to sample
 
 MaxRun = 10**6 #Maximum number of runs --- tipically 10**6 for a 1000 path
 pathLength = 6*10**3 #Path Lenght in time slices
@@ -1030,47 +1030,50 @@ min_array2 = CreateMinArray(pathLength)
 
 print('Executing PIMC')
 '''Executing PIMC on multiple machines'''
-Ps = []
-with ThreadPoolExecutor(max_workers=MAX_Workers) as executor:
-    returns = [executor.submit(PIMC,MaxRun, pathLength, NumMeasures,T_length, i) for i in range(Number_Samples)]
-    for r in concurrent.futures.as_completed(returns):
-        Ps.append(r.result())
-        
-        
-print('Processing and saving results')
-'''Processing results'''
-Ps = np.array(Ps)
 
-#Creating arrays 
-Paths1 = np.array(Ps[:,0])
-Paths2 = np.array(Ps[:,1])
-SARR= Ps[:,2]
-PERM= np.array(Ps[:,3])
+AllResults = []
+for cross in range(Number_Samples):
+	
+	with ThreadPoolExecutor(max_workers=MAX_Workers) as executor:
+	    returns = [executor.submit(PIMC,MaxRun, pathLength, NumMeasures,T_length, cross) for i in range(MAX_Workers)]
+	    for r in concurrent.futures.as_completed(returns):
+	        AllResults.append(r.result())
+	        
+	        
+	print('Processing and saving results')
+	'''Processing results'''
+	Ps = np.array(AllResults)
 
-
-P1 = np.zeros((len(Paths1),3,pathLength))
-P2 = np.zeros((len(Paths1),3,pathLength))
-SS = np.zeros(len(SARR))
-SSTD = np.zeros(len(SARR))
-for i in range(len(Paths1)):
-    P1[i,:,:] = Paths1[i]
-    P2[i,:,:] = Paths2[i]
-    Si = np.array(SARR[i])
-    SS[i] = np.mean(Si[-10:])
-    SSTD[i] = np.std(Si[-10:])
-    
-#Creating name files
-nm1 = repr(Number_Samples) + 'Paths1'
-nm2 = repr(Number_Samples) + 'Paths2'
-nmS = repr(Number_Samples) + 'S_mean'
-nmStd = repr(Number_Samples) + 'S_std'
-nmPerm =  repr(Number_Samples) + 'Perms'
+	#Creating arrays 
+	Paths1 = np.array(Ps[:,0])
+	Paths2 = np.array(Ps[:,1])
+	SARR= Ps[:,2]
+	PERM= np.array(Ps[:,3])
 
 
-'''Saving results in the Paths folder'''
-np.save(nm1, P1 )
-np.save(nm2, P2 )
-np.save(nmS, SS )
-np.save(nmStd, SSTD )
-np.save(nmPerm, PERM )
+	P1 = np.zeros((len(Paths1),3,pathLength))
+	P2 = np.zeros((len(Paths1),3,pathLength))
+	SS = np.zeros(len(SARR))
+	SSTD = np.zeros(len(SARR))
+	for i in range(len(Paths1)):
+	    P1[i,:,:] = Paths1[i]
+	    P2[i,:,:] = Paths2[i]
+	    Si = np.array(SARR[i])
+	    SS[i] = np.mean(Si[-10:])
+	    SSTD[i] = np.std(Si[-10:])
+	    
+	#Creating name files
+	nm1 = repr(Number_Samples) + 'Paths1'
+	nm2 = repr(Number_Samples) + 'Paths2'
+	nmS = repr(Number_Samples) + 'S_mean'
+	nmStd = repr(Number_Samples) + 'S_std'
+	nmPerm =  repr(Number_Samples) + 'Perms'
+
+
+	'''Saving results in the Paths folder'''
+	np.save(nm1, P1 )
+	np.save(nm2, P2 )
+	np.save(nmS, SS )
+	np.save(nmStd, SSTD )
+	np.save(nmPerm, PERM )
 
