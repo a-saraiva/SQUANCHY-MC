@@ -1,0 +1,14 @@
+#!/bin/bash
+#!/usr/bin/env python
+#PBS -N ARRAY4 - $MY_VAR
+#PBS -l select=1:ncpus=1:mem=1gb
+#PBS -l walltime=0:15:00
+#PBS -j oe
+#PBS -M j.cifuentes_pardo@unsw.edu.au
+#PBS -m ae
+#PBS -J 1-5
+
+cd $HOME/PIMC/VX_1V/cross$MY_VAR
+module load python/3.7.3 
+cd run${PBS_ARRAY_INDEX} 
+python3 pimc.py > output.txt
