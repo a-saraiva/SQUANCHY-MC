@@ -64,10 +64,7 @@ def ee(path1,path2):
 def V_hrl(path):
     return interpolate(path.T) + V_step(path[2,:])
 
-'''V_field = V_doubledot
-dV_field = dV_doubledot
-print('Double Dot')'''
-V_field = V_hrl
+
 print('HRL')
 
 
