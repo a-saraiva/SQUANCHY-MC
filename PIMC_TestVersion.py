@@ -244,7 +244,7 @@ def KineticTotalEnergy(MassVec,path1,path2, Perm):
     else:
         BigPath = np.concatenate((path1,path2), axis = 1)
         RBigPath = np.roll(BigPath,-2,(1))
-        return (.5/(tau**2))*np.matmul(np.transpose(MassVec),(RBigPath-BigPath)**2)
+        return (.5/(4*tau**2))*np.matmul(np.transpose(MassVec),(RBigPath-BigPath)**2)
         # return (.5/(4*tau**2))*np.matmul(np.transpose(MassVec),(RBigPath-BigPath)**2)
 
 
@@ -451,6 +451,7 @@ def PIMC( NumRun
     
     #Create 2 random paths with definite number of crossings. Perm is the permutation number 
     p1 , p2 , Perm = generate_paths_N_crossings(pathLength, crossings)
+    Perm = -Perm
     S_arr = []
     
     '''The following lines are useful for debugging. They plot paths and 
