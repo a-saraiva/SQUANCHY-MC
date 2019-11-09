@@ -106,14 +106,24 @@ def generate_paths_N_crossings(N, crossings):
     CrossingPoints[-1] = N
     CrossingPoints[1:-1] = List
     CrossingPoints = CrossingPoints.astype(int)
+    # I1 = -60
+    # I2 = -20
+    # I3 = -45
+    # I4 = 5
+
+
+    I1 = -60
+    I2 = -5
+    I3 = -55
+    I4 = 5
 
     for i in range(crossings+1):
         if i%2 == 0:
-            pathx1[CrossingPoints[i]:CrossingPoints[i+1]] = np.random.uniform(-60,-20,CrossingPoints[i+1]-CrossingPoints[i])
-            pathx2[CrossingPoints[i]:CrossingPoints[i+1]] = np.random.uniform(-45,5,CrossingPoints[i+1]-CrossingPoints[i])
+            pathx1[CrossingPoints[i]:CrossingPoints[i+1]] = np.random.uniform(I1,I2,CrossingPoints[i+1]-CrossingPoints[i])
+            pathx2[CrossingPoints[i]:CrossingPoints[i+1]] = np.random.uniform(I3,I4,CrossingPoints[i+1]-CrossingPoints[i])
         else:
-            pathx1[CrossingPoints[i]:CrossingPoints[i+1]] = np.random.uniform(-45,5,CrossingPoints[i+1]-CrossingPoints[i])
-            pathx2[CrossingPoints[i]:CrossingPoints[i+1]] = np.random.uniform(-60,-20,CrossingPoints[i+1]-CrossingPoints[i])
+            pathx1[CrossingPoints[i]:CrossingPoints[i+1]] = np.random.uniform(I3,I4,CrossingPoints[i+1]-CrossingPoints[i])
+            pathx2[CrossingPoints[i]:CrossingPoints[i+1]] = np.random.uniform(I1,I2,CrossingPoints[i+1]-CrossingPoints[i])
 
         
     pathy1 = np.random.uniform(-12,12,N)
@@ -190,8 +200,7 @@ def KineticEnergy(MassVec,path):
                path(3*N-array)
        return: Energy vector(N-array)
     '''
-    # return (.5/(tau**2))*np.matmul(np.transpose(MassVec),(path[:,1:]-path[:,:-1])**2)
-    return (.5/(4*tau**2))*np.matmul(np.transpose(MassVec),(path[:,2:]-path[:,:-2])**2)
+    return (.5/(4*tau2))*np.matmul(np.transpose(MassVec),(path[:,2:]-path[:,:-2])**2)
 
 def find_Grid_action(path1,path2,GridFunc, minArray):
     '''Computes the action given two electron paths
@@ -227,26 +236,33 @@ def KineticTotalEnergy(MassVec,path1,path2, Perm):
     
     if Perm == 1:
 
-
-        # Rpath1 = np.roll(path1,-1,(1))
-        # k1 = (.5/(tau**2))*np.matmul(np.transpose(MassVec),(Rpath1-path1)**2)
         Rpath1 = np.roll(path1,-2,(1))
-        k1 = (.5/(4*tau**2))*np.matmul(np.transpose(MassVec),(Rpath1-path1)**2)
+        k1 = (.5/(4*tau2))*np.matmul(np.transpose(MassVec),(Rpath1-path1)**2)
         
-        # Rpath2 = np.roll(path2,-1,(1))
-        # k2 = (.5/(tau**2))*np.matmul(np.transpose(MassVec),(Rpath2-path2)**2)
-
         Rpath2 = np.roll(path2,-2,(1))
-        k2 = (.5/(4*tau**2))*np.matmul(np.transpose(MassVec),(Rpath2-path2)**2)
+        k2 = (.5/(4*tau2))*np.matmul(np.transpose(MassVec),(Rpath2-path2)**2)
 
-        return k1 + k2
+        return np.sum(k1 + k2)
     
     else:
         BigPath = np.concatenate((path1,path2), axis = 1)
         RBigPath = np.roll(BigPath,-2,(1))
-        return (.5/(4*tau**2))*np.matmul(np.transpose(MassVec),(RBigPath-BigPath)**2)
-        
-        # return (.5/(4*tau**2))*np.matmul(np.transpose(MassVec),(RBigPath-BigPath)**2)
+        return np.sum((.5/(4*tau2))*np.matmul(np.transpose(MassVec),(RBigPath-BigPath)**2))
+
+
+def PotentialTotalEnergy(path1,path2,GridFunc, minArray):
+    '''Computes kinetic energy of the total periodic path of an electron path
+       inputs: MassVec(3*1-array)
+               path(3*N-array)
+       return: Energy vector(N-array)
+    '''
+    #Interaction
+    V_interaction =  np.sum(ee(path1,path2))
+    #Potential energy
+    path1Potential = np.sum(ComputePotential(GridFunc, path1,minArray))
+    path2Potential = np.sum(ComputePotential(GridFunc, path2,minArray))
+    return V_interaction + path1Potential + path2Potential
+       
 
 
 def find_Grid_Total_action(path1,path2,Perm,GridFunc, minArray):
@@ -254,22 +270,12 @@ def find_Grid_Total_action(path1,path2,Perm,GridFunc, minArray):
        inputs: Path1 , Path2: 3*N-arrays
        outputs: Action(real)
     '''
-    #Interaction
-    V_interaction =  np.sum(ee(path1,path2))
-    
     #Kinetic energy
     s1 = tau*KineticTotalEnergy(m,path1,path2, Perm)
     
-    #Potential energy
-    path1Potential = ComputePotential(GridFunc, path1,minArray)
-    path2Potential = ComputePotential(GridFunc, path2,minArray)
-    
     #Action
-    s1 = np.sum(s1) + tau * np.sum(path1Potential) + tau * np.sum(path2Potential)# + V_interaction+ V_interaction
-    
-    #sum up
-    s = s1  + tau * V_interaction #+ 2 * np.log(2 * np.pi * tau / meff)
-    return s
+    s1 += tau*PotentialTotalEnergy(path1,path2,GridFunc, minArray)
+    return s1
     
 
 '''------------------------------------- Updates --------------------------------'''
@@ -320,39 +326,47 @@ def exchangeUpdate( Perm , path1 ,path2 ):
     Inputs:
     '''
     N = len(path1[0,:])
-    randomTime = np.random.randint(N)
-    #Computing previous kinetic components at randomTime
-    k1 = (.5/(4*tau))*np.matmul(np.transpose(m),(path1[:,randomTime]-path1[:,randomTime-2])**2)
-    k2 = (.5/(4*tau))*np.matmul(np.transpose(m),(path2[:,randomTime]-path2[:,randomTime-2])**2)
+    arr = np.arange(1,N-2,4)
+    np.random.shuffle(arr)
+    randTimes= np.sort(arr[:2])
+    delta_s = 0
+    
+    for randomTime in randTimes:
+        #Computing previous kinetic components at randomTime
+	    k1 = (.5/(4*tau))*np.matmul(np.transpose(m),(path1[:,randomTime]-path1[:,randomTime-2])**2)
+	    k2 = (.5/(4*tau))*np.matmul(np.transpose(m),(path2[:,randomTime]-path2[:,randomTime-2])**2)
 
-    k1 += (.5/(4*tau))*np.matmul(np.transpose(m),(path1[:,randomTime+1]-path1[:,randomTime-1])**2)
-    k2 += (.5/(4*tau))*np.matmul(np.transpose(m),(path2[:,randomTime+1]-path2[:,randomTime-1])**2)
-    
-    #Computing new kinetic components after exchange at randomTime
-    nk1 = (.5/(4*tau))*np.matmul(np.transpose(m),(path2[:,randomTime]-path1[:,randomTime-2])**2)
-    nk2 = (.5/(4*tau))*np.matmul(np.transpose(m),(path1[:,randomTime]-path2[:,randomTime-2])**2)
+	    k1 += (.5/(4*tau))*np.matmul(np.transpose(m),(path1[:,randomTime+1]-path1[:,randomTime-1])**2)
+	    k2 += (.5/(4*tau))*np.matmul(np.transpose(m),(path2[:,randomTime+1]-path2[:,randomTime-1])**2)
+	    
+	    #Computing new kinetic components after exchange at randomTime
+	    nk1 = (.5/(4*tau))*np.matmul(np.transpose(m),(path2[:,randomTime]-path1[:,randomTime-2])**2)
+	    nk2 = (.5/(4*tau))*np.matmul(np.transpose(m),(path1[:,randomTime]-path2[:,randomTime-2])**2)
 
-    nk1 += (.5/(4*tau))*np.matmul(np.transpose(m),(path2[:,randomTime+1]-path1[:,randomTime-1])**2)
-    nk2 += (.5/(4*tau))*np.matmul(np.transpose(m),(path1[:,randomTime+1]-path2[:,randomTime-1])**2)
-    
-    delta_s = nk1 + nk2 - k1 - k2
-    
+	    nk1 += (.5/(4*tau))*np.matmul(np.transpose(m),(path2[:,randomTime+1]-path1[:,randomTime-1])**2)
+	    nk2 += (.5/(4*tau))*np.matmul(np.transpose(m),(path1[:,randomTime+1]-path2[:,randomTime-1])**2)
+	    #adding terms to action 
+	    delta_s = delta_s + (nk1 + nk2) - (k1 + k2)
+	    
+
     if delta_s < 0: # always accepting if action lowered
-        tempPath = np.copy(path1[:,randomTime:])
-        path1[:,randomTime:] = np.copy(path2[:,randomTime:])
-        path2[:,randomTime:] = np.copy(tempPath)  
+        TimeInterval = np.arange(randTimes[0],randTimes[1]) 
+        
+        tempPath = np.copy(path1[:,TimeInterval])
+        path1[:,TimeInterval] = np.copy(path2[:,TimeInterval])
+        path2[:,TimeInterval] = np.copy(tempPath)  
         
 #         print('Minor action' , np.exp(-(delta_s/hbar) ))
 #         print('Sweep accepted -', delta_s )
-        return delta_s ,  (-1) * Perm  #permutation variable changes signs
+        return delta_s ,   Perm  #permutation variable changes signs
 
     elif np.random.rand(1) < np.exp(-(delta_s/hbar)): #otherwise accept with PI probability.
 #         print('increased with probability ' , np.exp(-(delta_s/hbar) ))
-        tempPath = np.copy(path1[:,randomTime:])
-        path1[:,randomTime:] = np.copy(path2[:,randomTime:])
-        path2[:,randomTime:] = np.copy(tempPath) 
-#         print('Sweep accepted +', delta_s )
-        return delta_s , (-1) * Perm
+        TimeInterval = np.arange(randTimes[0],randTimes[1]) 
+        tempPath = np.copy(path1[:,TimeInterval])
+        path1[:,TimeInterval] = np.copy(path2[:,TimeInterval])
+        path2[:,TimeInterval] = np.copy(tempPath) 
+        return delta_s ,  Perm
         
     else:
 #         print('Stable with probability ' , np.exp(-(delta_s/hbar) ))      
@@ -452,8 +466,10 @@ def PIMC( NumRun
     
     #Create 2 random paths with definite number of crossings. Perm is the permutation number 
     p1 , p2 , Perm = generate_paths_N_crossings(pathLength, crossings)
-    Perm = -Perm
+    Perm = Perm
     S_arr = []
+    Kin_arr = []
+    Pot_arr = []
     
     '''The following lines are useful for debugging. They plot paths and 
     '''
@@ -463,7 +479,7 @@ def PIMC( NumRun
 
     circledPath = -1 #This variable is used to handle sweeps at the path boundaries with periodic conditions
     #exchProb = 0  #This variables controls the probability of doing exchange update. Default 0 if exchanged update is not allowed
-    
+    EndingParam = 20 #decides how many parameters to measure when expecting for convergence of the code 
     i = 0
     stop = False
     while (i < NumRun+1) & (stop == False): #there is an stop signal that tells the code if desired
@@ -508,50 +524,63 @@ def PIMC( NumRun
             p2 = np.copy(np.roll(rolled_p2,rTime,(1)))
 
 
-#         '''Saved last 10000 paths - debugging'''
-#         #if i> (NumRun - SavedPaths):
-#         #    if  np.random.rand(1) < 0.2:
-#         #        Paths_1.append(p1)
-#         #        Paths_2.append(p2)
-            
         '''Take measurements every 10000 operations'''
         if i%NumMeasures == 0:
+        	#save action values to check convergence
             S_tot = find_Grid_Total_action(p1,p2,Perm,V_HRL, min_array2)
-                
-#             S_tot = find_Grid_action(p1,p2,V_HRL,min_array2)
+
             S_arr.append(S_tot)
-            
-            if i//NumMeasures > 50:
-                s = np.array(S_arr[-50:])
-                STD = np.std(s)
-                MEAN = np.mean(s)
-                
+            Kin_arr.append(KineticTotalEnergy(m, p1,p2,Perm))
+            Pot_arr.append(PotentialTotalEnergy(p1,p2,V_HRL, min_array2))
+
+            #take measurements to decide if it is convergence has been reached 
+            if i//NumMeasures > 2*EndingParam:
+                s1 = np.array(S_arr[-EndingParam:])
+                s2 = np.array(S_arr[-2*EndingParam:-EndingParam])
+
+                STD1 = np.std(s1)
+                MEAN1 = np.mean(s1)
+
+                STD2 = np.std(s2)
+                MEAN2 = np.mean(s2)
+
+                lowMax = MEAN1 + STD1/(np.sqrt(EndingParam))
+                upMin = MEAN2 - STD2/(np.sqrt(EndingParam))
+
+                relativeError = STD1/MEAN1 
+                print(i,"Iterations - Relative Error", relativeError )
 #                 if ((exchProb > 0) & (STD/MEAN < 0.05) ) : # If exchange update is allowed, this part cancels it at will at some point
 #                     exchProb = 0
 #                     print('No more exchange at', i)
-                
-                if (STD/MEAN < error):
+                #if the fluctuations are small and the predictions are stable, stop the code
+                if ((relativeError < error) & (lowMax > upMin)):
                     stop = True
-                    print('Stopped at i = ', i)
+                    print('Error = ', relativeError, '--- Stopped at i = ', i)
                     
             '''Plots paths'''
 #             axarr[0].plot(range(pathLength) , p1[0,:],'-')
 #             axarr[1].plot(range(pathLength) , p2[0,:],'-')
-    return p1, p2, S_arr , Perm
+    return p1, p2, np.array(S_arr), Perm, np.array(Kin_arr) , np.array(Pot_arr)
 
 
 '''------------------Plotting functions-useful for debugging---------------------'''
-def PlotConvergence(S_arr):
-	''' Plot convergence
-	 Inputs: 
-	 Return:
 
-	'''
-	fig, ax = plt.subplots(1,1)
-	ax.plot(range(len(S_arr[-200:])),S_arr[-200:],'.')
-	#Axis Labels
-	ax.set_ylabel('$S$')
-	ax.set_xlabel('Iterations ($\\times'+ repr(NumMeasures) +'$)')
+def PlotConvergence(S_arr, Kin_arr, Pot_arr):
+    ''' Plot convergence
+     Inputs: S_arr - action array
+     Kin_arr - kinetic array
+     Pot_array -kinetic array
+     Return: '''
+    fig, ax = plt.subplots(1,1)
+    NumDat = 200
+    size_S = len(S_arr[-NumDat:])
+    ax.plot(range(size_S),(S_arr[-NumDat:]/pathLength),'r')
+    ax.plot(range(size_S),tau*Kin_arr[-NumDat:]/pathLength,'b.')
+    ax.plot(range(size_S),tau*Pot_arr[-NumDat:]/pathLength,'k.')
+
+    #Axis Labels
+    ax.set_ylabel('$S$')
+    ax.set_xlabel('Iterations ($\\times'+ repr(NumMeasures) +'$)')
 
 
 
@@ -564,8 +593,8 @@ def PlotPaths(p1,p2):
 	pathLength = len(p1[0,:])
 	fig, ax = plt.subplots(1,1)
 
-	ax.plot( p1[0,:], np.array(range(pathLength))*tau ,'b.')
-	ax.plot( p2[0,:], np.array(range(pathLength))*tau ,'r.')
+	ax.plot( p1[0,:], np.array(range(pathLength))*tau ,'b-')
+	ax.plot( p2[0,:], np.array(range(pathLength))*tau ,'r-')
 
 	ax.set_ylabel('$\\tau*(ins)$')
 	ax.set_xlabel('$x (nm)$')
@@ -574,8 +603,9 @@ def PlotPaths(p1,p2):
 '''-----------------------------------------Execute PIMC-----------------------------------------'''
 
 ## -----------------------List of Constants------------------
-"""Parameters, units: ueV, nm, ns"""
-print('Setting initial constants')
+# """Parameters, units: ueV, nm, ns"""
+
+print("Setting initial constants")
 eec = 1.23*10**5
 print('Electron-electron coupling constant (eec) =', eec, 'ueV')
 me = 5.686 * 10 **(-6) # ueV ns^2/nm^2 - electron mass
@@ -645,6 +675,8 @@ T_length =  int(Inputs[3])
 crossings =  int(Inputs[4])
 error =  Inputs[5]
 tau =  Inputs[6] 
+tau2 = tau**2
+
 h = np.array([ Inputs[7], Inputs[8], Inputs[9]])
 exchProb = Inputs[10]
 
@@ -657,7 +689,7 @@ min_array2 = CreateMinArray(pathLength)
 print('Executing PIMC')
 '''Executing PIMC on multiple machines'''
 start_time = time.time()
-p1,p2,S_arr,Perm = PIMC(MaxRun
+p1,p2,S_arr,Perm, Kin_arr,Pot_arr = PIMC(MaxRun
 						,pathLength
 						,NumMeasures
 						,T_length
@@ -678,7 +710,7 @@ print("--- %s seconds ---" % (time.time() - start_time))
 np.savez('path' , p1=p1 , p2=p2 , S_arr=S_arr , Perm=Perm )
 
 #Plot Results
-PlotConvergence(S_arr)
+PlotConvergence(S_arr,Kin_arr, Pot_arr)
 PlotPaths(p1,p2)
 
 plt.show()
