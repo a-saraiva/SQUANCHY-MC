@@ -106,16 +106,16 @@ def generate_paths_N_crossings(N, crossings):
     CrossingPoints[-1] = N
     CrossingPoints[1:-1] = List
     CrossingPoints = CrossingPoints.astype(int)
+    I1 = -60
+    I2 = -20
+    I3 = -45
+    I4 = 5
+
+
     # I1 = -60
-    # I2 = -20
+    # I2 = -5
     # I3 = -45
     # I4 = 5
-
-
-    I1 = -60
-    I2 = -5
-    I3 = -55
-    I4 = 5
 
     for i in range(crossings+1):
         if i%2 == 0:
@@ -194,13 +194,27 @@ def ComputePotential(Grid_Func, path, min_array):
 #     print(argZ)
     return Grid_Func[argsXY[0],argsXY[1],argZ]
 
+def timeDerivative(path):
+    ''' Gets the time derivative of the path 
+     Inputs: path (3*N)
+     Return: derivative (3*N-4)
+
+    '''
+    #return (1/2)*path[:,2:]-path[:,:-2]
+    k1 = 8*(path[:,2:]-path[:,:-2]) 
+    k2 = k1[:,1:-1] - 1 * (path[:,4:]-path[:,:-4])
+    return (1/12)*k2
+
+
+
 def KineticEnergy(MassVec,path):
     '''Computes kinetic energy of path of an electron path
        inputs: MassVec(3*1-array)
                path(3*N-array)
        return: Energy vector(N-array)
     '''
-    return (.5/(4*tau2))*np.matmul(np.transpose(MassVec),(path[:,2:]-path[:,:-2])**2)
+    # return (.5/(4*tau2))*np.matmul(np.transpose(MassVec),(path[:,2:]-path[:,:-2])**2)
+    return (.5/tau2)*np.matmul(np.transpose(MassVec),(timeDerivative(path))**2)
 
 def find_Grid_action(path1,path2,GridFunc, minArray):
     '''Computes the action given two electron paths
