@@ -157,7 +157,8 @@ def dist(path1,path2):
 #     return np.sqrt(np.matmul(minus.T,minus))
 
 def ee(path1,path2):
-    return(eec/dist(path1,path2))
+    d = eec/dist(path1,path2)
+    return (1/3.0)*( 2*d[1:] + d[:1] )
 
 #---------------------------------------------------GRID - Potentials--------------------------------------------------
 
@@ -299,41 +300,29 @@ One sweep consists of trying N times changing a random element in the array path
 each time accepting/refusing according to Metropolis. 
 """
 
-def sweepUpdate(path1 , path2):
+def sweepUpdate(path1 ):
     '''
     Inputs:
     '''
     N = len(path1[0,:])
     shape = np.shape(path1)
     new_path1 = np.zeros(shape)
-    new_path2 = np.zeros(shape)
 
-    if np.random.rand(1) > .5:
-         # Creating 3N random numbers between [-h/2,h/2]
-        rand_r1 = (np.random.rand(3,N-4)-.5)
-        rand_r1[0,:] = h[0]*rand_r1[0,:]
-        rand_r1[1,:] = h[1]*rand_r1[1,:]
-        rand_r1[2,:] = h[2]*rand_r1[2,:]
-        
-        rand_r2 = np.zeros((3,N-4))
-    else:
-         # Creating 3N random numbers between [-h/2,h/2]
-        rand_r2 = (np.random.rand(3,N-4)-.5)
-        rand_r2[0,:] = h[0]*rand_r2[0,:]
-        rand_r2[1,:] = h[1]*rand_r2[1,:]
-        rand_r2[2,:] = h[2]*rand_r2[2,:]        
-        rand_r1 = np.zeros((3,N-4))
+     # Creating 3N random numbers between [-h/2,h/2]
+    rand_r1 = (np.random.rand(3,N-4)-.5)
+    rand_r1[0,:] = h[0]*rand_r1[0,:]
+    rand_r1[1,:] = h[1]*rand_r1[1,:]
+    rand_r1[2,:] = h[2]*rand_r1[2,:]
 
     #Adding random numbers to create new path 
     new_path1[:,2:-2] = path1[:,2:-2] + rand_r1
-    new_path2[:,2:-2] = path2[:,2:-2] + rand_r2
+
     #Fix the path boundaries so that the change in kinetic energy is not considered
-    endPath = np.array([0,1,-2,-1])
+    endPath = np.array([0,1,2,-3,-2,-1])
 
     new_path1[:,endPath] = np.copy(path1[:,endPath])
-    new_path2[:,endPath] = np.copy(path2[:,endPath])
          
-    return new_path1, new_path2
+    return new_path1
 
 def exchangeUpdate( Perm , path1 ,path2 ):
     '''
@@ -389,14 +378,20 @@ def exchangeUpdate( Perm , path1 ,path2 ):
 
 
 def sweep(Perm ,path1,path2,GridFunc,min_array,circledPath):
-    '''Computes the action given two electron paths
+    '''Computes the action given two electron paths and decides if the sweep takes place
        Inputs: Path1 , Path2: 3*N-arrays
                Sold - old action (float)
        outputs: newPath1, newPath2 (3N-arrays)
                 delta_s - difference between new action and old action
     '''
-    
-    new_path1, new_path2 = sweepUpdate(path1 , path2)
+    if np.random.rand(1) > .5:
+        new_path1 = sweepUpdate(path1)
+        new_path2 = np.copy(path2)
+    else:
+        new_path1 = np.copy(path1)
+        new_path2 = sweepUpdate(path2)
+
+        # new_path1, new_path2 = sweepUpdate(path1 , path2)
     
     #In odd permutations if the paths are crossed and we are sweeping at the boundary, 
     #we need to exchange both paths before computing S, to take into account new boundary conditions
@@ -481,6 +476,10 @@ def PIMC( NumRun
     #Create 2 random paths with definite number of crossings. Perm is the permutation number 
     p1 , p2 , Perm = generate_paths_N_crossings(pathLength, crossings)
     Perm = Perm
+    if Perm == -1:
+        BigPath = np.concatenate((path1,path2), axis = 1)
+
+    #Create arrays that will be used to measure convergence
     S_arr = []
     Kin_arr = []
     Pot_arr = []
@@ -509,9 +508,6 @@ def PIMC( NumRun
             '''Pic up a T_length-path randomly to sweep'''
             #Select a random time
             rTime = np.random.randint(pathLength)  
-            
-            
-                
                 
             #Roll the array to set rTime to the first position
             rolled_p1 = np.roll(p1,-rTime,(1))
