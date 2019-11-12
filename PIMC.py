@@ -136,8 +136,10 @@ def generate_paths_N_crossings(N, crossings):
 
     '''From now on all potentials are modified to include vectorization'''
 
-def V_step(z_path):
-    return(pot_step / (np.exp(-(4/a)*z_path) + 1))
+#def V_step(z_path):
+#    zero_arr = np.zeros((3,len(z_path)))
+#    zero_arr[2,:] = z_path
+#    return V / (np.exp(-(4/a)*z_path) + 1) + interpolate(zero_arr.T))
 
 def dist(path1,path2):
     minus = path1-path2
@@ -149,27 +151,24 @@ def ee(path1,path2):
 
 #---------------------------------------------------GRID - Potentials--------------------------------------------------
 
-def roundGrid(vec,grid_step):
-    '''transforms the values in grid into the approximated integer number on it'''
-    return vec//grid_step + (vec%grid_step)//(grid_step/2)
-
 #Define Grid and minimum array
 # pathLenght = 100
 # XS, YS , ZS, Grid =  RefineGrid(xs,ys,zs)
 # Z_max = np.argmax(ZS)
 def CreateMinArray(pathLenght):
-    '''creates a 3*N array of min values of XS to displace the grid 
+    '''
     Inputs:
-    Return: 3*N array where mins[xs,:] = min(xs) 
+    Return:
     '''
     mins= np.array([min(XS),min(YS),min(ZS)])
     min_array = np.zeros((3,pathLenght))
-    min_array[0,:] +=  roundGrid(mins[0],0.4) 
-    min_array[1,:] +=  roundGrid(mins[1],0.4)  
-    min_array[2,:] +=  roundGrid(mins[2],0.1) 
+    min_array[0,:] +=  mins[0].astype(int)
+    min_array[1,:] +=  mins[1].astype(int)
+    min_array[2,:] +=  (10*mins[2]).astype(int)
     min_array = min_array.astype(int)
     return min_array
 
+# min_array = CreateMinArray(pathLenght)
 
 def ComputePotential(Grid_Func, path, min_array):
     '''
@@ -179,30 +178,11 @@ def ComputePotential(Grid_Func, path, min_array):
     Return: The Grid 
     '''
     #Get indices of the paths in XS,YS,ZS coordinates
-    argsXY = roundGrid(path[:-1,:],0.4)  - min_array[:-1,:]
-    argsXY = argsXY.astype(int)
-    argsZ = roundGrid(path[-1,:],0.1) - min_array[-1,:]
-#     argZ = np.round(path[-1,:]*10).astype(int) - min_array[-1,:]
-    argZ = argsZ.astype(int)
+    argsXY = np.round(path[:-1,:]).astype(int) - min_array[:-1,:]
+    argZ = np.round(path[-1,:]*10).astype(int) - min_array[-1,:]
     argZ[argZ > Z_max] = Z_max
 #     print(argZ)
-    return Grid_Func[argsXY[0],argsXY[1],argZ] + V_step(path[2,:])
-    # ------------------------------COMPUTING PATH ENERGY ---------------------------------------
-
-def timeDerivative(path):
-    ''' Gets the time derivative of the path 
-     Inputs: path (3*N)
-     Return: derivative (3*N-4)
-    '''
-    #return (1/2)*path[:,2:]-path[:,:-2]
-    if np.random.rand(1) > 1:
-        k1 = 8*(path[:,2:]-path[:,:-2]) 
-        k2 = k1[:,1:-1] - 1 * (path[:,4:]-path[:,:-4])
-        return (1/12)*k2
-    else:
-        return (path[:,1:]-path[:,:-1]) 
-
-
+    return Grid_Func[argsXY[0],argsXY[1],argZ]
 
 def KineticEnergy(MassVec,path):
     '''Computes kinetic energy of path of an electron path
@@ -210,34 +190,31 @@ def KineticEnergy(MassVec,path):
                path(3*N-array)
        return: Energy vector(N-array)
     '''
-    # return (.5/(4*tau2))*np.matmul(np.transpose(MassVec),(path[:,2:]-path[:,:-2])**2)
-    return np.sum((.5/tau2)*np.matmul(np.transpose(MassVec),(timeDerivative(path))**2))
-
-def PotentialEnergy(path1,path2,GridFunc, minArray):
-    ''' Computes potential energy of a pair of electron paths
-     Inputs: paths (3*N)array
-             GridFuction ---Requirements for compute potential
-     Return:
-
-    '''
-    V_interaction =  np.sum(ee(path1,path2))
-    #Action
-    pot1 = np.sum(ComputePotential(GridFunc, path1, minArray))  # + V_interaction
-    pot2 = np.sum(ComputePotential(GridFunc, path2, minArray))   # + V_interaction
-    return V_interaction +pot1 +pot2
-
+    return (.5/(tau**2))*np.matmul(np.transpose(MassVec),(path[:,1:]-path[:,:-1])**2)
 
 def find_Grid_action(path1,path2,GridFunc, minArray):
     '''Computes the action given two electron paths
        inputs: Path1 , Path2: 3*N-arrays
        outputs: Action(real)
     '''
+    #Interaction
+    V_interaction =  np.sum(ee(path1,path2))
+    
     #Kinetic energy
-    kin1 = KineticEnergy(m,path1)
-    kin2 = KineticEnergy(m,path2)
+    s1 = tau*KineticEnergy(m,path1)
+    s2 = tau*KineticEnergy(m,path2)
+    
     #Potential energy
-    Pot = PotentialEnergy(path1,path2,GridFunc, minArray) 
-    return tau*(kin1 + kin2 + Pot)  #+ 2 * np.log(2 * np.pi * tau / meff)
+    path1Potential = ComputePotential(GridFunc, path1,minArray)
+    path2Potential = ComputePotential(GridFunc, path2,minArray)
+    
+    #Action
+    s1 = np.sum(s1) + tau * np.sum(path1Potential)# + V_interaction
+    s2 = np.sum(s2) + tau * np.sum(path2Potential)# + V_interaction
+    
+    #sum up
+    s = s1 + s2  + tau * V_interaction #+ 2 * np.log(2 * np.pi * tau / meff)
+    return s
 
     
 def KineticTotalEnergy(MassVec,path1,path2, Perm):
@@ -248,33 +225,17 @@ def KineticTotalEnergy(MassVec,path1,path2, Perm):
     '''
     
     if Perm == 1:
-
-        Rpath1 = np.roll(path1,-2,(1))
-        k1 = (.5/(4*tau2))*np.matmul(np.transpose(MassVec),(Rpath1-path1)**2)
+        Rpath1 = np.roll(path1,-1,(1))
+        k1 = (.5/(tau**2))*np.matmul(np.transpose(MassVec),(Rpath1-path1)**2)
         
-        Rpath2 = np.roll(path2,-2,(1))
-        k2 = (.5/(4*tau2))*np.matmul(np.transpose(MassVec),(Rpath2-path2)**2)
-
-        return np.sum(k1 + k2)
+        Rpath2 = np.roll(path2,-1,(1))
+        k2 = (.5/(tau**2))*np.matmul(np.transpose(MassVec),(Rpath2-path2)**2)
+        return k1 + k2
     
     else:
         BigPath = np.concatenate((path1,path2), axis = 1)
-        RBigPath = np.roll(BigPath,-2,(1))
-        return np.sum((.5/(4*tau2))*np.matmul(np.transpose(MassVec),(RBigPath-BigPath)**2))
-       
-def PotentialTotalEnergy(path1,path2,GridFunc, minArray):
-    '''Computes kinetic energy of the total periodic path of an electron path
-       inputs: MassVec(3*1-array)
-               path(3*N-array)
-       return: Energy vector(N-array)
-    '''
-    #Interaction
-    V_interaction =  np.sum(ee(path1,path2))
-    #Potential energy
-    path1Potential = np.sum(ComputePotential(GridFunc, path1,minArray))
-    path2Potential = np.sum(ComputePotential(GridFunc, path2,minArray))
-    return V_interaction + path1Potential + path2Potential
-       
+        RBigPath = np.roll(BigPath,-1,(1))
+        return (.5/(tau**2))*np.matmul(np.transpose(MassVec),(RBigPath-BigPath)**2)
 
 
 def find_Grid_Total_action(path1,path2,Perm,GridFunc, minArray):
@@ -282,12 +243,22 @@ def find_Grid_Total_action(path1,path2,Perm,GridFunc, minArray):
        inputs: Path1 , Path2: 3*N-arrays
        outputs: Action(real)
     '''
+    #Interaction
+    V_interaction =  np.sum(ee(path1,path2))
+    
     #Kinetic energy
     s1 = tau*KineticTotalEnergy(m,path1,path2, Perm)
     
+    #Potential energy
+    path1Potential = ComputePotential(GridFunc, path1,minArray)
+    path2Potential = ComputePotential(GridFunc, path2,minArray)
+    
     #Action
-    s1 += tau*PotentialTotalEnergy(path1,path2,GridFunc, minArray)
-    return s1
+    s1 = np.sum(s1) + tau * np.sum(path1Potential) + tau * np.sum(path2Potential)# + V_interaction+ V_interaction
+    
+    #sum up
+    s = s1  + tau * V_interaction #+ 2 * np.log(2 * np.pi * tau / meff)
+    return s
     
 
 '''------------------------------------- Updates --------------------------------'''
@@ -297,82 +268,72 @@ One sweep consists of trying N times changing a random element in the array path
 each time accepting/refusing according to Metropolis. 
 """
 
-
-
-def exchangeUpdate( Perm , path1 ,path2 ):
+def sweepUpdate(path1 , path2):
     '''
     Inputs:
     '''
     N = len(path1[0,:])
-    arr = np.arange(1,N-2,4)
-    np.random.shuffle(arr)
-    randTimes= np.sort(arr[:2])
-    delta_s = 0
-    
-    for randomTime in randTimes:
-        #Computing previous kinetic components at randomTime
-	    k1 = (.5/(4*tau))*np.matmul(np.transpose(m),(path1[:,randomTime]-path1[:,randomTime-2])**2)
-	    k2 = (.5/(4*tau))*np.matmul(np.transpose(m),(path2[:,randomTime]-path2[:,randomTime-2])**2)
-
-	    k1 += (.5/(4*tau))*np.matmul(np.transpose(m),(path1[:,randomTime+1]-path1[:,randomTime-1])**2)
-	    k2 += (.5/(4*tau))*np.matmul(np.transpose(m),(path2[:,randomTime+1]-path2[:,randomTime-1])**2)
-	    
-	    #Computing new kinetic components after exchange at randomTime
-	    nk1 = (.5/(4*tau))*np.matmul(np.transpose(m),(path2[:,randomTime]-path1[:,randomTime-2])**2)
-	    nk2 = (.5/(4*tau))*np.matmul(np.transpose(m),(path1[:,randomTime]-path2[:,randomTime-2])**2)
-
-	    nk1 += (.5/(4*tau))*np.matmul(np.transpose(m),(path2[:,randomTime+1]-path1[:,randomTime-1])**2)
-	    nk2 += (.5/(4*tau))*np.matmul(np.transpose(m),(path1[:,randomTime+1]-path2[:,randomTime-1])**2)
-	    #adding terms to action 
-	    delta_s = delta_s + (nk1 + nk2) - (k1 + k2)
-	    
-
-    if delta_s < 0: # always accepting if action lowered
-        TimeInterval = np.arange(randTimes[0],randTimes[1]) 
+    if np.random.rand(1) > .5:
+         # Creating 3N random numbers between [-h/2,h/2]
+        rand_r1 = (np.random.rand(3,N)-.5)
+        rand_r1[0,:] = h[0]*rand_r1[0,:]
+        rand_r1[1,:] = h[1]*rand_r1[1,:]
+        rand_r1[2,:] = h[2]*rand_r1[2,:]
         
-        tempPath = np.copy(path1[:,TimeInterval])
-        path1[:,TimeInterval] = np.copy(path2[:,TimeInterval])
-        path2[:,TimeInterval] = np.copy(tempPath)  
+        rand_r2 = np.zeros((3,N))
+    else:
+         # Creating 3N random numbers between [-h/2,h/2]
+        rand_r2 = (np.random.rand(3,N)-.5)
+        rand_r2[0,:] = h[0]*rand_r2[0,:]
+        rand_r2[1,:] = h[1]*rand_r2[1,:]
+        rand_r2[2,:] = h[2]*rand_r2[2,:]
+        
+        rand_r1 = np.zeros((3,N))
+
+    #Adding random numbers to create new path 
+    new_path1 = path1 + rand_r1
+    new_path2 = path2 + rand_r2
+            
+    return new_path1, new_path2
+
+def exchangeUpdate(Perm ,path1 , path2):
+    '''
+    Inputs:
+    '''
+    N = len(path1[0,:])
+    randomTime = np.random.randint(N)
+    #Computing previous kinetic components at randomTime
+    k1 = (.5/(tau))*np.matmul(np.transpose(m),(path1[:,randomTime]-path1[:,randomTime-1])**2)
+    k2 = (.5/(tau))*np.matmul(np.transpose(m),(path2[:,randomTime]-path2[:,randomTime-1])**2)
+    
+    #Computing new kinetic components after exchange at randomTime
+    nk1 = (.5/(tau))*np.matmul(np.transpose(m),(path2[:,randomTime]-path1[:,randomTime-1])**2)
+    nk2 = (.5/(tau))*np.matmul(np.transpose(m),(path1[:,randomTime]-path2[:,randomTime-1])**2)
+    
+    delta_s = nk1 + nk2 - k1 - k2
+    
+    if delta_s < 0: # always accepting if action lowered
+        tempPath = np.copy(path1[:,randomTime:])
+        path1[:,randomTime:] = np.copy(path2[:,randomTime:])
+        path2[:,randomTime:] = np.copy(tempPath)  
         
 #         print('Minor action' , np.exp(-(delta_s/hbar) ))
 #         print('Sweep accepted -', delta_s )
-        return delta_s ,   Perm  #permutation variable changes signs
+        return delta_s ,  (-1) * Perm  #permutation variable changes signs
 
     elif np.random.rand(1) < np.exp(-(delta_s/hbar)): #otherwise accept with PI probability.
 #         print('increased with probability ' , np.exp(-(delta_s/hbar) ))
-        TimeInterval = np.arange(randTimes[0],randTimes[1]) 
-        tempPath = np.copy(path1[:,TimeInterval])
-        path1[:,TimeInterval] = np.copy(path2[:,TimeInterval])
-        path2[:,TimeInterval] = np.copy(tempPath) 
-        return delta_s ,  Perm
+        tempPath = np.copy(path1[:,randomTime:])
+        path1[:,randomTime:] = np.copy(path2[:,randomTime:])
+        path2[:,randomTime:] = np.copy(tempPath) 
+#         print('Sweep accepted +', delta_s )
+        return delta_s , (-1) * Perm
         
     else:
 #         print('Stable with probability ' , np.exp(-(delta_s/hbar) ))      
         return 0 , Perm
     
-def sweepUpdate(path1 ):
-    '''
-    Inputs:
-    '''
-    N = len(path1[0,:])
-    shape = np.shape(path1)
-    new_path1 = np.zeros(shape)
 
-     # Creating 3N random numbers between [-h/2,h/2]
-    rand_r1 = (np.random.rand(3,N-4)-.5)
-    rand_r1[0,:] = h[0]*rand_r1[0,:]
-    rand_r1[1,:] = h[1]*rand_r1[1,:]
-    rand_r1[2,:] = h[2]*rand_r1[2,:]
-
-    #Adding random numbers to create new path 
-    new_path1[:,2:-2] = path1[:,2:-2] + rand_r1
-
-    #Fix the path boundaries so that the change in kinetic energy is not considered
-    endPath = np.array([0,1,2,-3,-2,-1])
-
-    new_path1[:,endPath] = np.copy(path1[:,endPath])
-         
-    return new_path1
 
 def sweep(Perm ,path1,path2,GridFunc,min_array,circledPath):
     '''Computes the action given two electron paths
@@ -381,104 +342,58 @@ def sweep(Perm ,path1,path2,GridFunc,min_array,circledPath):
        outputs: newPath1, newPath2 (3N-arrays)
                 delta_s - difference between new action and old action
     '''
-    if np.random.rand(1) > .5:
-        new_path1 = sweepUpdate(path1)
-        new_path2 = path2
-        kin_old = KineticEnergy(m,path1)
-        kin_new = KineticEnergy(m,new_path1)
-
-        old_pot = np.sum(ComputePotential(GridFunc, path1, min_array))
-        new_pot = np.sum(ComputePotential(GridFunc, new_path1, min_array))
-    else:
-        new_path1 = path1
-        new_path2 = sweepUpdate(path2)
-        kin_old = KineticEnergy(m,path2)
-        kin_new = KineticEnergy(m,new_path2)
-
-        old_pot = np.sum(ComputePotential(GridFunc, path2, min_array))
-        new_pot = np.sum(ComputePotential(GridFunc, new_path2, min_array))
-
-    old_int =  np.sum(ee(path1,path2))
-    new_int =  np.sum(ee(new_path1,new_path2))
-    #Action
-    # + V_interaction
-
-    # pot_old = PotentialTotalEnergy(path1,path2,GridFunc, min_array)
-    # pot_new = PotentialTotalEnergy(new_path1,new_path2,GridFunc, min_array)
-
-
-    delta_s = tau*( (kin_new+ new_pot + new_int) - (kin_old+ old_pot + old_int))
-
-    if delta_s < 0: # always accepting if action lowered
-        return new_path1 , new_path2 , delta_s
-    elif np.random.rand(1) < np.exp(-(delta_s/hbar)): #otherwise accept with PI probability.
-        return new_path1 , new_path2 , delta_s
-    else:
-        return path1 , path2, 0
     
-    #In odd permutations if the paths are crossed and we are sweeping at the boundary, 
-    #we need to exchange both paths before computing S, to take into account new boundary conditions
-    # if Perm == -1 & circledPath > -1 :
-    # 	shape = np.shape(path1)
-    # 	endPath1 = np.zeros(shape)
-    # 	endPath2 = np.zeros(shape)
-
-    # 	new_endPath1 = np.zeros(shape)
-    # 	new_endPath2 = np.zeros(shape)
-    # 	#Exchanging old paths
-    # 	endPath1[:,0:circledPath+1] = path1[:,0:circledPath+1]
-    # 	endPath1[:,circledPath+1:] = path2[:,circledPath+1:]
-
-    # 	endPath2[:,0:circledPath+1] = path2[:,0:circledPath+1]
-    # 	endPath2[:,circledPath+1:] = path1[:,circledPath+1:]
-
-    # 	#Exchanging new paths
-    # 	new_endPath1[:,0:circledPath+1] = new_path1[:,0:circledPath+1]
-    # 	new_endPath1[:,circledPath+1:] =  new_path2[:,circledPath+1:]
-
-    # 	new_endPath2[:,0:circledPath+1] = new_path2[:,0:circledPath+1]
-    # 	new_endPath2[:,circledPath+1:] =  new_path1[:,circledPath+1:]
-
-    # 	So =  find_Grid_action(endPath1,endPath2,GridFunc,min_array) #--- not necessary if the action is saved
-    # 	Sn =  find_Grid_action(new_endPath1,new_endPath2,GridFunc,min_array)
-    # else:
-    # 	So =  find_Grid_action(path1,path2,GridFunc,min_array) #--- not necessary if the action is saved
-    # 	Sn =  find_Grid_action(new_path1,new_path2,GridFunc,min_array)
-
-
+    #Old ------ Computing the action
+#     So = find_action(path1,path2)   #--- not necessary if the action is saved
+#     Sn = find_action(new_path1,new_path2)
+    
+    new_path1, new_path2 = sweepUpdate(path1 , path2)
+    
+    So =  find_Grid_action(path1,path2,GridFunc,min_array) #--- not necessary if the action is saved
+    Sn =  find_Grid_action(new_path1,new_path2,GridFunc,min_array)
+    
+    
+    #In odd permutations if the paths are crossed and we are sweeping at the boundary, we need to change the kinetic action
+    if Perm == -1 & circledPath > -1 :
     #         print(circledPath)
             #substracting kinetic action connecting the same path at the boundary
-            # So = So - (.5/(tau))*np.matmul(np.transpose(m),(path1[:,circledPath+1]-path1[:,circledPath])**2)
-            # So = So - (.5/(tau))*np.matmul(np.transpose(m),(path2[:,circledPath+1]-path2[:,circledPath])**2)
+            So = So - (.5/(tau))*np.matmul(np.transpose(m),(path1[:,circledPath+1]-path1[:,circledPath])**2)
+            So = So - (.5/(tau))*np.matmul(np.transpose(m),(path2[:,circledPath+1]-path2[:,circledPath])**2)
 
-            # Sn = Sn - (.5/(tau))*np.matmul(np.transpose(m),(new_path1[:,circledPath+1]-new_path1[:,circledPath])**2)
-            # Sn = Sn - (.5/(tau))*np.matmul(np.transpose(m),(new_path2[:,circledPath+1]-new_path2[:,circledPath])**2)
+            Sn = Sn - (.5/(tau))*np.matmul(np.transpose(m),(new_path1[:,circledPath+1]-new_path1[:,circledPath])**2)
+            Sn = Sn - (.5/(tau))*np.matmul(np.transpose(m),(new_path2[:,circledPath+1]-new_path2[:,circledPath])**2)
             
-            # #adding kinetic action connecting crossing paths at the boundary
-            # So = So + (.5/(tau))*np.matmul(np.transpose(m),(path1[:,circledPath+1]-path2[:,circledPath])**2)
-            # So = So + (.5/(tau))*np.matmul(np.transpose(m),(path2[:,circledPath+1]-path1[:,circledPath])**2)
+            #adding kinetic action connecting crossing paths at the boundary
+            So = So + (.5/(tau))*np.matmul(np.transpose(m),(path1[:,circledPath+1]-path2[:,circledPath])**2)
+            So = So + (.5/(tau))*np.matmul(np.transpose(m),(path2[:,circledPath+1]-path1[:,circledPath])**2)
 
-            # Sn = Sn + (.5/(tau))*np.matmul(np.transpose(m),(new_path1[:,circledPath+1]-new_path2[:,circledPath])**2)
-            # Sn = Sn + (.5/(tau))*np.matmul(np.transpose(m),(new_path2[:,circledPath+1]-new_path1[:,circledPath])**2)
+            Sn = Sn + (.5/(tau))*np.matmul(np.transpose(m),(new_path1[:,circledPath+1]-new_path2[:,circledPath])**2)
+            Sn = Sn + (.5/(tau))*np.matmul(np.transpose(m),(new_path2[:,circledPath+1]-new_path1[:,circledPath])**2)
+        
 
-
+    delta_s = Sn - So 
+#     print(So, Sn , delta_s)          
+               
+    if delta_s < 0: # always accepting if action lowered
+#         print('Minor action' , np.exp(-(delta_s/hbar) ))
+        return new_path1 , new_path2 , delta_s
+    elif np.random.rand(1) < np.exp(-(delta_s/hbar)): #otherwise accept with PI probability.
+#         print('increased with probability ' , np.exp(-(delta_s/hbar) ))
+        return new_path1 , new_path2 , delta_s
+        
+    else:
+#         print('Stable with probability ' , np.exp(-(delta_s/hbar) ))      
+        return path1 , path2, 0
 
 
 # -------------------------------------------PIMC-------------------------------------------------
 
-def PIMC( NumRun
-        , pathLength
-        , NumMeasures
-        , T_length
-        , crossings
-        , error
-        , exchProb
-        ,V_HRL):
-    '''Execute path integral montecarlo
+def PIMC(NumRun, pathLength, NumMeasures,T_length, crossings, error):
+    '''Excute path integral montecarlo
      Inputs: NumRun (int) - max num runs
              pathLenght - number of time beads
              numMeasures- number of runs between S-measurements
-             T_length - length of the sub-paths used for sweep 
+             T_length - lenght of the subpaths used for sweep 
      Return: p1,p2 - Sampled paths
              S_arr - array of measurements
 
@@ -486,12 +401,7 @@ def PIMC( NumRun
     
     #Create 2 random paths with definite number of crossings. Perm is the permutation number 
     p1 , p2 , Perm = generate_paths_N_crossings(pathLength, crossings)
-    Perm = Perm
-
-    #Create arrays that will be used to measure convergence
     S_arr = []
-    Kin_arr = []
-    Pot_arr = []
     
     '''The following lines are useful for debugging. They plot paths and 
     '''
@@ -500,8 +410,8 @@ def PIMC( NumRun
 #     fig, axarr = plt.subplots(2,1)
 
     circledPath = -1 #This variable is used to handle sweeps at the path boundaries with periodic conditions
-    #exchProb = 0  #This variables controls the probability of doing exchange update. Default 0 if exchanged update is not allowed
-    EndingParam = 20 #decides how many parameters to measure when expecting for convergence of the code 
+    exchProb = 0.1  #This variables controls the probability of doing exchange update. Default 0 if exchanged update is not allowed
+    
     i = 0
     stop = False
     while (i < NumRun+1) & (stop == False): #there is an stop signal that tells the code if desired
@@ -517,7 +427,10 @@ def PIMC( NumRun
             '''Pic up a T_length-path randomly to sweep'''
             #Select a random time
             rTime = np.random.randint(pathLength)  
-
+            
+            
+                
+                
             #Roll the array to set rTime to the first position
             rolled_p1 = np.roll(p1,-rTime,(1))
             rolled_p2 = np.roll(p2,-rTime,(1))
@@ -543,61 +456,52 @@ def PIMC( NumRun
             p2 = np.copy(np.roll(rolled_p2,rTime,(1)))
 
 
+#         '''Saved last 10000 paths - debugging'''
+#         #if i> (NumRun - SavedPaths):
+#         #    if  np.random.rand(1) < 0.2:
+#         #        Paths_1.append(p1)
+#         #        Paths_2.append(p2)
+            
         '''Take measurements every 10000 operations'''
         if i%NumMeasures == 0:
-        	#save action values to check convergence
             S_tot = find_Grid_Total_action(p1,p2,Perm,V_HRL, min_array2)
-
+                
+#             S_tot = find_Grid_action(p1,p2,V_HRL,min_array2)
             S_arr.append(S_tot)
-            Kin_arr.append(KineticTotalEnergy(m, p1,p2,Perm))
-            Pot_arr.append(PotentialTotalEnergy(p1,p2,V_HRL, min_array2))
-
-            #take measurements to decide if it is convergence has been reached 
-            if i//NumMeasures > 2*EndingParam:
-                s1 = np.array(S_arr[-EndingParam:])
-                s2 = np.array(S_arr[-2*EndingParam:-EndingParam])
-
-                STD1 = np.std(s1)
-                MEAN1 = np.mean(s1)
-
-                STD2 = np.std(s2)
-                MEAN2 = np.mean(s2)
-
-                lowMax = MEAN1 + STD1/(np.sqrt(EndingParam))
-                upMin = MEAN2 - STD2/(np.sqrt(EndingParam))
-
-                relativeError = STD1/MEAN1 
-                print(i,"Iterations - Relative Error", relativeError )
+            
+            if i//NumMeasures > 20:
+                s = np.array(S_arr[-20:])
+                STD = np.std(s)
+                MEAN = np.mean(s)
+                
 #                 if ((exchProb > 0) & (STD/MEAN < 0.05) ) : # If exchange update is allowed, this part cancels it at will at some point
 #                     exchProb = 0
 #                     print('No more exchange at', i)
-                #if the fluctuations are small and the predictions are stable, stop the code
-                if ((relativeError < error) & (lowMax > upMin)):
+                
+                if (STD/MEAN < error):
                     stop = True
-                    print('Error = ', relativeError, '--- Stopped at i = ', i)
+                    print('Stopped at i = ', i)
                     
             '''Plots paths'''
 #             axarr[0].plot(range(pathLength) , p1[0,:],'-')
 #             axarr[1].plot(range(pathLength) , p2[0,:],'-')
-    return p1, p2, np.array(S_arr), Perm, np.array(Kin_arr) , np.array(Pot_arr)
+    return p1, p2, S_arr , Perm
+
 
 '''------------------Plotting functions-useful for debugging---------------------'''
-def PlotConvergence(S_arr, Kin_arr, Pot_arr):
-    ''' Plot convergence
-     Inputs: S_arr - action array
-     Kin_arr - kinetic array
-     Pot_array -kinetic array
-     Return: '''
-    fig, ax = plt.subplots(1,1)
-    NumDat = 200
-    size_S = len(S_arr[-NumDat:])
-    ax.plot(range(size_S),(S_arr[-NumDat:]/pathLength),'r')
-    ax.plot(range(size_S),tau*Kin_arr[-NumDat:]/pathLength,'b.')
-    ax.plot(range(size_S),tau*Pot_arr[-NumDat:]/pathLength,'k.')
+def PlotConvergence(S_arr):
+	''' Plot convergence
+	 Inputs: 
+	 Return:
 
-    #Axis Labels
-    ax.set_ylabel('$S$')
-    ax.set_xlabel('Iterations ($\\times'+ repr(NumMeasures) +'$)')
+	'''
+	fig, ax = plt.subplots(1,1)
+	ax.semilogy(range(len(S_arr)),S_arr)
+	#Axis Labels
+	ax.set_ylabel('$S$')
+	ax.set_xlabel('Iterations ($\\times'+ repr(NumMeasures) +'$)')
+
+
 
 def PlotPaths(p1,p2):
 	''' Plot electron paths in x
@@ -618,9 +522,8 @@ def PlotPaths(p1,p2):
 '''-----------------------------------------Execute PIMC-----------------------------------------'''
 
 ## -----------------------List of Constants------------------
-# """Parameters, units: ueV, nm, ns"""
-
-print("Setting initial constants")
+"""Parameters, units: ueV, nm, ns"""
+print('Setting initial constants')
 eec = 1.23*10**5
 print('Electron-electron coupling constant (eec) =', eec, 'ueV')
 me = 5.686 * 10 **(-6) # ueV ns^2/nm^2 - electron mass
@@ -633,7 +536,7 @@ my = mt #effective mass in y-direction
 mz = ml #effective mass in z-direction
 m = np.array([mx,my,mz])
 print('Effective mass vector (m) = ', m/me,'*me' )
-pot_step = 3 * 10**6 #ueV - Si/SiO2 interface
+pot_step = 3 * 10**6 #ueV - Si/SiO2 interfac
 print('Step voltage height (pot_step) = ', pot_step,' $ueV$' )
 
 hbar = 0.6582 # ueV * ns
@@ -690,9 +593,7 @@ T_length =  int(Inputs[3])
 crossings =  int(Inputs[4])
 error =  Inputs[5]
 tau =  Inputs[6] 
-tau2 = tau**2
 h = np.array([ Inputs[7], Inputs[8], Inputs[9]])
-exchProb = Inputs[10]
 
 print('tau = ', tau, '(ns)')
 print('Displacement vector (h) =', h , 'nm')
@@ -703,14 +604,12 @@ min_array2 = CreateMinArray(pathLength)
 print('Executing PIMC')
 '''Executing PIMC on multiple machines'''
 start_time = time.time()
-p1,p2,S_arr,Perm, Kin_arr,Pot_arr= PIMC(MaxRun
-                						,pathLength
-                						,NumMeasures
-                						,T_length
-                						,crossings 
-                						,error
-                						,exchProb
-                                        ,V_HRL)	
+p1,p2,S_arr,Perm = PIMC(MaxRun
+						,pathLength
+						,NumMeasures
+						,T_length
+						,crossings 
+						,error)
 
 print("Parity ----", Perm)
 print("Value of the mean. ----"
@@ -724,32 +623,8 @@ print("--- %s seconds ---" % (time.time() - start_time))
 np.savez('path' , p1=p1 , p2=p2 , S_arr=S_arr , Perm=Perm )
 
 #Plot Results
-PlotConvergence(S_arr,Kin_arr, Pot_arr)
+PlotConvergence(S_arr)
 PlotPaths(p1,p2)
-
-
-
-from scipy.interpolate import RegularGridInterpolator as rgi
-HRL_Potential = 'old_UNSW4_1st withBG TEST ephiQWM UNSW4_1st structure 2nm 800x800 - 10-4-12-4.npz'
-'''Define grid and HRL potential'''
-xs = np.load(HRL_Potential)['xs']
-ys = np.load(HRL_Potential)['ys']
-zs = np.load(HRL_Potential)['zs']
-ephi = 10**6 * np.load(HRL_Potential)['ephi']
-
-interpolate = rgi(points = (xs,ys,zs), values = ephi-np.min(ephi), bounds_error = False, method = 'linear') #options 'linear' , 'nearest'
-
-
-# Heterostructure interface potential (z-direction) leading to airy functions as wave function.
-def V_hrl(path):
-    return interpolate(path.T) + V_step(path[2,:])
-
-fig, ax = plt.subplots(1,1)
-ax.plot(p1[2,:], V_hrl(p1),'rv')
-ax.plot(p1[2,:],ComputePotential(V_HRL, p1, min_array2)  ,'b^')
-ax.set_xlabel('Z(nm)')
-ax.set_ylabel('$V_z(\\mu eV)$')
-
 
 plt.show()
 

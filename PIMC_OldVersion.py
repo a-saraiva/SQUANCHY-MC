@@ -422,6 +422,19 @@ def sweep(Perm ,path1,path2,GridFunc,min_array,circledPath):
     	So =  find_Grid_action(path1,path2,GridFunc,min_array) #--- not necessary if the action is saved
     	Sn =  find_Grid_action(new_path1,new_path2,GridFunc,min_array)
 
+    delta_s = Sn - So 
+#     print(So, Sn , delta_s)          
+               
+    if delta_s < 0: # always accepting if action lowered
+#         print('Minor action' , np.exp(-(delta_s/hbar) ))
+        return new_path1 , new_path2 , delta_s
+    elif np.random.rand(1) < np.exp(-(delta_s/hbar)): #otherwise accept with PI probability.
+#         print('increased with probability ' , np.exp(-(delta_s/hbar) ))
+        return new_path1 , new_path2 , delta_s
+        
+    else:
+#         print('Stable with probability ' , np.exp(-(delta_s/hbar) ))      
+        return path1 , path2, 0
 
     #         print(circledPath)
             #substracting kinetic action connecting the same path at the boundary
@@ -438,19 +451,6 @@ def sweep(Perm ,path1,path2,GridFunc,min_array,circledPath):
             # Sn = Sn + (.5/(tau))*np.matmul(np.transpose(m),(new_path1[:,circledPath+1]-new_path2[:,circledPath])**2)
             # Sn = Sn + (.5/(tau))*np.matmul(np.transpose(m),(new_path2[:,circledPath+1]-new_path1[:,circledPath])**2)
 
-    delta_s = Sn - So 
-#     print(So, Sn , delta_s)          
-               
-    if delta_s < 0: # always accepting if action lowered
-#         print('Minor action' , np.exp(-(delta_s/hbar) ))
-        return new_path1 , new_path2 , delta_s
-    elif np.random.rand(1) < np.exp(-(delta_s/hbar)): #otherwise accept with PI probability.
-#         print('increased with probability ' , np.exp(-(delta_s/hbar) ))
-        return new_path1 , new_path2 , delta_s
-        
-    else:
-#         print('Stable with probability ' , np.exp(-(delta_s/hbar) ))      
-        return path1 , path2, 0
 
 
 # -------------------------------------------PIMC-------------------------------------------------

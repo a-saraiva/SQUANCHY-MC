@@ -74,11 +74,24 @@ def RefineGrid(xs,ys,zs):
         Return: New axes XS,YS,ZS , 
                 NewMeshgrid: Grid (xs,ys,zs)-array
     '''
-    XS = np.linspace(min(xs),max(xs),2*(len(xs))-1)
-    YS = np.linspace(min(ys),max(ys),2*(len(ys))-1)
+    #cutting array
+    minx = (xs >= -90)
+    maxx = (xs <= 45)
+    miny = (ys >= -90)
+    maxy= (ys <= 60)
+    minz = (zs > -8)
+
+    
+    xs = xs[maxx & minx]
+    ys = ys[maxy & miny]
+    zs = zs[minz]
+    #Refining grid
+    XS = np.linspace(min(xs),max(xs),5*(len(xs))-4)
+    YS = np.linspace(min(ys),max(ys),5*(len(ys))-4)
 #     ZS = np.linspace(min(zs)+.5,max(zs)-.5,len(zs)-1)
     ZS = np.linspace(min(zs),max(zs),int(10*(max(zs)-min(zs)))+1) #--- Stronger refinement
     return XS , YS , ZS , np.array(np.meshgrid(XS, YS, ZS))
+
 
 def ComputeGridFunction(Func , Grid, xs,ys,zs, transpose):
         '''
@@ -102,7 +115,6 @@ def ComputeGridFunction(Func , Grid, xs,ys,zs, transpose):
         
         return Grid_Func
     
-# A = np.array([XS, YS , ZS, Grid, V_HRL])
 
 '''Define grid and HRL potential'''
 xs = np.load(HRL_Potential)['xs']
@@ -110,10 +122,13 @@ ys = np.load(HRL_Potential)['ys']
 zs = np.load(HRL_Potential)['zs']
 ephi = 10**6 * np.load(HRL_Potential)['ephi']
 
-interpolate = rgi(points = (xs,ys,zs), values = ephi, bounds_error = False, method = 'linear') #options 'linear' , 'nearest'
+interpolate = rgi(points = (xs,ys,zs), values = ephi-np.min(ephi), bounds_error = False, method = 'linear') #options 'linear' , 'nearest'
+
 
 XS, YS , ZS, Grid =  RefineGrid(xs,ys,zs)
-V_HRL = ComputeGridFunction(V_hrl, Grid, XS, YS , ZS,False)
+V_HRL = ComputeGridFunction(interpolate, Grid, XS, YS , ZS,True)
+
+# # # A = np.array([XS, YS , ZS, Grid, V_HRL])
+np.savez('V_HRL_Grid' , XS=XS, YS=YS , ZS = ZS, Grid = Grid, V_HRL = V_HRL  )
 
 print('Saved in V_HRL_Grid')
-np.savez('V_HRL_Grid' , XS=XS, YS=YS , ZS = ZS, Grid = Grid, V_HRL = V_HRL  )
