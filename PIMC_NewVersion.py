@@ -98,7 +98,7 @@ def generate_paths_N_crossings(N, crossings):
     pathx1 = np.zeros(N) 
     pathx2 = np.zeros(N) 
     
-    arr = np.arange(100,N,100)
+    arr = np.arange(50,N-50,100)
     np.random.shuffle(arr)
     List= np.sort(arr[:crossings])
     CrossingPoints = np.zeros(crossings+2)
@@ -359,22 +359,22 @@ def sweepUpdate(path1 ):
     new_path1 = np.zeros(shape)
 
      # Creating 3N random numbers between [-h/2,h/2]
-    rand_r1 = (np.random.rand(3,N-4)-.5)
+    rand_r1 = (np.random.rand(3,N-2)-.5)
     rand_r1[0,:] = h[0]*rand_r1[0,:]
     rand_r1[1,:] = h[1]*rand_r1[1,:]
     rand_r1[2,:] = h[2]*rand_r1[2,:]
 
     #Adding random numbers to create new path 
-    new_path1[:,2:-2] = path1[:,2:-2] + rand_r1
+    new_path1[:,1:-1] = path1[:,1:-1] + rand_r1
 
     #Fix the path boundaries so that the change in kinetic energy is not considered
-    endPath = np.array([0,1,2,-3,-2,-1])
+    endPath = np.array([0,-1])
 
     new_path1[:,endPath] = np.copy(path1[:,endPath])
          
     return new_path1
 
-def antiSymSweep(Perm ,path1,path2,GridFunc,min_array):
+def antiSymSweep(path1,path2,GridFunc,min_array):
     '''Computes the action given two electron paths
        Inputs: Path1 , Path2: 3*N-arrays
                Sold - old action (float)
@@ -401,7 +401,7 @@ def antiSymSweep(Perm ,path1,path2,GridFunc,min_array):
         return path1 , path2, 0
 
 
-def sweep(Perm ,path1,path2,GridFunc,min_array,circledPath):
+def sweep(path1,path2,GridFunc,min_array):
     '''Computes the action given two electron paths
        Inputs: Path1 , Path2: 3*N-arrays
                Sold - old action (float)
@@ -437,52 +437,6 @@ def sweep(Perm ,path1,path2,GridFunc,min_array,circledPath):
     else:
         return path1 , path2, 0
     
-    #In odd permutations if the paths are crossed and we are sweeping at the boundary, 
-    #we need to exchange both paths before computing S, to take into account new boundary conditions
-    # if Perm == -1 & circledPath > -1 :
-    # 	shape = np.shape(path1)
-    # 	endPath1 = np.zeros(shape)
-    # 	endPath2 = np.zeros(shape)
-
-    # 	new_endPath1 = np.zeros(shape)
-    # 	new_endPath2 = np.zeros(shape)
-    # 	#Exchanging old paths
-    # 	endPath1[:,0:circledPath+1] = path1[:,0:circledPath+1]
-    # 	endPath1[:,circledPath+1:] = path2[:,circledPath+1:]
-
-    # 	endPath2[:,0:circledPath+1] = path2[:,0:circledPath+1]
-    # 	endPath2[:,circledPath+1:] = path1[:,circledPath+1:]
-
-    # 	#Exchanging new paths
-    # 	new_endPath1[:,0:circledPath+1] = new_path1[:,0:circledPath+1]
-    # 	new_endPath1[:,circledPath+1:] =  new_path2[:,circledPath+1:]
-
-    # 	new_endPath2[:,0:circledPath+1] = new_path2[:,0:circledPath+1]
-    # 	new_endPath2[:,circledPath+1:] =  new_path1[:,circledPath+1:]
-
-    # 	So =  find_Grid_action(endPath1,endPath2,GridFunc,min_array) #--- not necessary if the action is saved
-    # 	Sn =  find_Grid_action(new_endPath1,new_endPath2,GridFunc,min_array)
-    # else:
-    # 	So =  find_Grid_action(path1,path2,GridFunc,min_array) #--- not necessary if the action is saved
-    # 	Sn =  find_Grid_action(new_path1,new_path2,GridFunc,min_array)
-
-
-    #         print(circledPath)
-            #substracting kinetic action connecting the same path at the boundary
-            # So = So - (.5/(tau))*np.matmul(np.transpose(m),(path1[:,circledPath+1]-path1[:,circledPath])**2)
-            # So = So - (.5/(tau))*np.matmul(np.transpose(m),(path2[:,circledPath+1]-path2[:,circledPath])**2)
-
-            # Sn = Sn - (.5/(tau))*np.matmul(np.transpose(m),(new_path1[:,circledPath+1]-new_path1[:,circledPath])**2)
-            # Sn = Sn - (.5/(tau))*np.matmul(np.transpose(m),(new_path2[:,circledPath+1]-new_path2[:,circledPath])**2)
-            
-            # #adding kinetic action connecting crossing paths at the boundary
-            # So = So + (.5/(tau))*np.matmul(np.transpose(m),(path1[:,circledPath+1]-path2[:,circledPath])**2)
-            # So = So + (.5/(tau))*np.matmul(np.transpose(m),(path2[:,circledPath+1]-path1[:,circledPath])**2)
-
-            # Sn = Sn + (.5/(tau))*np.matmul(np.transpose(m),(new_path1[:,circledPath+1]-new_path2[:,circledPath])**2)
-            # Sn = Sn + (.5/(tau))*np.matmul(np.transpose(m),(new_path2[:,circledPath+1]-new_path1[:,circledPath])**2)
-
-
 
 
 # -------------------------------------------PIMC-------------------------------------------------
@@ -500,6 +454,8 @@ def PIMC( NumRun
              pathLenght - number of time beads
              numMeasures- number of runs between S-measurements
              T_length - length of the sub-paths used for sweep 
+             #exchProb = 0  #This variables controls the probability of doing exchange update. Default 0 if exchanged update is not allowed
+
      Return: p1,p2 - Sampled paths
              S_arr - array of measurements
 
@@ -520,8 +476,6 @@ def PIMC( NumRun
     #Paths_2 = []
 #     fig, axarr = plt.subplots(2,1)
 
-    circledPath = -1 #This variable is used to handle sweeps at the path boundaries with periodic conditions
-    #exchProb = 0  #This variables controls the probability of doing exchange update. Default 0 if exchanged update is not allowed
     EndingParam = 20 #decides how many parameters to measure when expecting for convergence of the code 
     i = 0
     stop = False
@@ -539,29 +493,25 @@ def PIMC( NumRun
             #Select a random time
             rTime = np.random.randint(pathLength)  
 
-            #Roll the array to set rTime to the first position
+            #Roll the array to set rTime to the first position . Roll is used to handle periodic bound. coditions
             rolled_p1 = np.roll(p1,-rTime,(1))
             rolled_p2 = np.roll(p2,-rTime,(1))
             #select the first T_length time positions
             pstart1 = rolled_p1[:, :T_length] 
             pstart2 = rolled_p2[:, :T_length] 
             
-            #Need to find the bead to eliminate from last position and break imposed periodic boundary conditions
-            if (T_length + rTime - 1) > (pathLength):
-                circledPath = pathLength - rTime -1
-            
             #make sweep only with the fist T components in the array
-            pp1 , pp2 , deltaS = sweep(Perm, pstart1, pstart2 ,V_HRL, min_array, circledPath)
-            
-            #Restore circledPath at original value
-            circledPath = -1
+            pp1 , pp2 , deltaS = sweep( pstart1
+                                      , pstart2 
+                                      , V_HRL
+                                      , min_array)
             
             #update the sweep result
             rolled_p1[:, :T_length] = np.copy(pp1)
             rolled_p2[:, :T_length] = np.copy(pp2)
             #Unroll vector
-            p1 = np.copy(np.roll(rolled_p1,rTime,(1)))
-            p2 = np.copy(np.roll(rolled_p2,rTime,(1)))
+            p1 = np.roll(rolled_p1,rTime,(1))
+            p2 = np.roll(rolled_p2,rTime,(1))
 
 
         '''Take measurements every 10000 operations'''
@@ -589,10 +539,7 @@ def PIMC( NumRun
 
                 relativeError = STD1/MEAN1 
                 print(i,"Iterations - Relative Error", relativeError )
-#                 if ((exchProb > 0) & (STD/MEAN < 0.05) ) : # If exchange update is allowed, this part cancels it at will at some point
-#                     exchProb = 0
-#                     print('No more exchange at', i)
-                #if the fluctuations are small and the predictions are stable, stop the code
+#  
                 if ((relativeError < error) & (lowMax > upMin)):
                     stop = True
                     print('Error = ', relativeError, '--- Stopped at i = ', i)
@@ -658,7 +605,7 @@ def AntiSymPIMC( NumRun
             #Select a random time
             rTime = np.random.randint(2*pathLength)  
 
-            #Roll the array to set rTime to the first position
+            #Roll the array to set rTime to the first position. Roll is used to handle anti-periodic bound. coditions
             rolled_p1 = np.roll(BigPath,-rTime,(1))
             rolled_p2 = np.roll(MirrorPath,-rTime,(1))
             #select the first T_length time positions
@@ -666,7 +613,10 @@ def AntiSymPIMC( NumRun
             pstart2 = rolled_p2[:, :T_length] 
             
             #make sweep only with the fist T components in the array
-            pp1 , pp2 , deltaS = antiSymSweep(Perm ,pstart1,pstart2,V_HRL,min_array)
+            pp1 , pp2 , deltaS = antiSymSweep(pstart1
+                                             ,pstart2
+                                             ,V_HRL
+                                             ,min_array)
             #update the sweep result
             rolled_p1[:, :T_length] = np.copy(pp1)
             BigPath = np.roll(rolled_p1,rTime,(1))
@@ -696,10 +646,7 @@ def AntiSymPIMC( NumRun
 
                 relativeError = STD1/MEAN1 
                 print(i,"Iterations - Relative Error", relativeError )
-#                 if ((exchProb > 0) & (STD/MEAN < 0.05) ) : # If exchange update is allowed, this part cancels it at will at some point
-#                     exchProb = 0
-#                     print('No more exchange at', i)
-                #if the fluctuations are small and the predictions are stable, stop the code
+
                 if ((relativeError < error) & (lowMax > upMin)):
                     stop = True
                     print('Error = ', relativeError, '--- Stopped at i = ', i)
@@ -892,7 +839,7 @@ ys = np.load(HRL_Potential)['ys']
 zs = np.load(HRL_Potential)['zs']
 ephi = 10**6 * np.load(HRL_Potential)['ephi']
 
-interpolate = rgi(points = (xs,ys,zs), values = ephi-np.min(ephi), bounds_error = False, method = 'linear') #options 'linear' , 'nearest'
+interpolate = rgi(points = (xs,ys,zs), values = ephi, bounds_error = False, method = 'linear') #options 'linear' , 'nearest'
 
 
 # Heterostructure interface potential (z-direction) leading to airy functions as wave function.
