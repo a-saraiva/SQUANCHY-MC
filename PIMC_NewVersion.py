@@ -98,7 +98,7 @@ def generate_paths_N_crossings(N, crossings):
     pathx1 = np.zeros(N) 
     pathx2 = np.zeros(N) 
     
-    arr = np.arange(N)
+    arr = np.arange(100,N,100)
     np.random.shuffle(arr)
     List= np.sort(arr[:crossings])
     CrossingPoints = np.zeros(crossings+2)
@@ -194,14 +194,14 @@ def timeDerivative(path):
      Inputs: path (3*N)
      Return: derivative (3*N-4)
     '''
+    return (path[:,1:]-path[:,:-1]) 
+    
     #return (1/2)*path[:,2:]-path[:,:-2]
-    if np.random.rand(1) > 1:
-        k1 = 8*(path[:,2:]-path[:,:-2]) 
-        k2 = k1[:,1:-1] - 1 * (path[:,4:]-path[:,:-4])
-        return (1/12)*k2
-    else:
-        return (path[:,1:]-path[:,:-1]) 
-
+    # if np.random.rand(1) > 1:
+    #     k1 = 8*(path[:,2:]-path[:,:-2]) 
+    #     k2 = k1[:,1:-1] - 1 * (path[:,4:]-path[:,:-4])
+    #     return (1/12)*k2
+    # else:
 
 
 def KineticEnergy(MassVec,path):
@@ -374,6 +374,33 @@ def sweepUpdate(path1 ):
          
     return new_path1
 
+def antiSymSweep(Perm ,path1,path2,GridFunc,min_array):
+    '''Computes the action given two electron paths
+       Inputs: Path1 , Path2: 3*N-arrays
+               Sold - old action (float)
+       outputs: newPath1, newPath2 (3N-arrays)
+                delta_s - difference between new action and old action
+    '''
+    new_path1 = sweepUpdate(path1)
+    new_path2 = path2
+    kin_old = KineticEnergy(m,path1)
+    kin_new = KineticEnergy(m,new_path1)
+
+    old_pot = np.sum(ComputePotential(GridFunc, path1, min_array))
+    new_pot = np.sum(ComputePotential(GridFunc, new_path1, min_array))
+
+    old_int =  np.sum(ee(path1,path2))
+    new_int =  np.sum(ee(new_path1,new_path2))
+    delta_s = tau*( (kin_new+ new_pot + new_int) - (kin_old+ old_pot + old_int))
+
+    if delta_s < 0: # always accepting if action lowered
+        return new_path1 , new_path2 , delta_s
+    elif np.random.rand(1) < np.exp(-(delta_s/hbar)): #otherwise accept with PI probability.
+        return new_path1 , new_path2 , delta_s
+    else:
+        return path1 , path2, 0
+
+
 def sweep(Perm ,path1,path2,GridFunc,min_array,circledPath):
     '''Computes the action given two electron paths
        Inputs: Path1 , Path2: 3*N-arrays
@@ -400,13 +427,7 @@ def sweep(Perm ,path1,path2,GridFunc,min_array,circledPath):
 
     old_int =  np.sum(ee(path1,path2))
     new_int =  np.sum(ee(new_path1,new_path2))
-    #Action
-    # + V_interaction
-
-    # pot_old = PotentialTotalEnergy(path1,path2,GridFunc, min_array)
-    # pot_new = PotentialTotalEnergy(new_path1,new_path2,GridFunc, min_array)
-
-
+    #add action
     delta_s = tau*( (kin_new+ new_pot + new_int) - (kin_old+ old_pot + old_int))
 
     if delta_s < 0: # always accepting if action lowered
@@ -581,6 +602,125 @@ def PIMC( NumRun
 #             axarr[1].plot(range(pathLength) , p2[0,:],'-')
     return p1, p2, np.array(S_arr), Perm, np.array(Kin_arr) , np.array(Pot_arr)
 
+def AntiSymPIMC( NumRun
+        , pathLength
+        , NumMeasures
+        , T_length
+        , crossings
+        , error
+        , exchProb
+        ,V_HRL):
+    '''Execute path integral montecarlo
+     Inputs: NumRun (int) - max num runs
+             pathLenght - number of time beads
+             numMeasures- number of runs between S-measurements
+             T_length - length of the sub-paths used for sweep 
+     Return: p1,p2 - Sampled paths
+             S_arr - array of measurements
+
+    '''
+    
+    #Create 2 random paths with definite number of crossings. Perm is the permutation number 
+    p1 , p2 , Perm = generate_paths_N_crossings(pathLength, crossings)
+    Perm = Perm
+
+    #Create arrays that will be used to measure convergence
+    S_arr = []
+    Kin_arr = []
+    Pot_arr = []
+
+
+    BigPath = np.concatenate((p1,p2), axis = 1)
+    MirrorPath = np.zeros(np.shape(BigPath))
+    MirrorPath[:,:pathLength] = BigPath[:,pathLength:]
+    MirrorPath[:,pathLength:] = BigPath[:,:pathLength]
+
+    '''The following lines are useful for debugging. They plot paths and 
+    '''
+    #Paths_1 = []
+    #Paths_2 = []
+    fig, axarr = plt.subplots(2,1)
+
+    EndingParam = 20 #decides how many parameters to measure when expecting for convergence of the code 
+    i = 0
+    stop = False
+    while (i < NumRun+1) & (stop == False): #there is an stop signal that tells the code if desired
+        i = i +1 
+        
+        '''Execute update half of the cases'''
+        if np.random.rand(1) < exchProb:
+
+            deltaS , Perm = exchangeUpdate(Perm, p1 , p2)
+
+        else:
+
+            '''Pic up a T_length-path randomly to sweep'''
+            #Select a random time
+            rTime = np.random.randint(2*pathLength)  
+
+            #Roll the array to set rTime to the first position
+            rolled_p1 = np.roll(BigPath,-rTime,(1))
+            rolled_p2 = np.roll(MirrorPath,-rTime,(1))
+            #select the first T_length time positions
+            pstart1 = rolled_p1[:, :T_length] 
+            pstart2 = rolled_p2[:, :T_length] 
+            
+            #make sweep only with the fist T components in the array
+            pp1 , pp2 , deltaS = antiSymSweep(Perm ,pstart1,pstart2,V_HRL,min_array)
+            #update the sweep result
+            rolled_p1[:, :T_length] = np.copy(pp1)
+            BigPath = np.roll(rolled_p1,rTime,(1))
+
+        '''Take measurements every 10000 operations'''
+        if i%NumMeasures == 0:
+            #save action values to check convergence
+            S_tot = find_Grid_Total_action(p1,p2,Perm,V_HRL, min_array2)
+
+            S_arr.append(S_tot)
+            Kin_arr.append(KineticTotalEnergy(m, p1,p2,Perm))
+            Pot_arr.append(PotentialTotalEnergy(p1,p2,V_HRL, min_array2))
+
+            #take measurements to decide if it is convergence has been reached 
+            if i//NumMeasures > 2*EndingParam:
+                s1 = np.array(S_arr[-EndingParam:])
+                s2 = np.array(S_arr[-2*EndingParam:-EndingParam])
+
+                STD1 = np.std(s1)
+                MEAN1 = np.mean(s1)
+
+                STD2 = np.std(s2)
+                MEAN2 = np.mean(s2)
+
+                lowMax = MEAN1 + STD1/(np.sqrt(EndingParam))
+                upMin = MEAN2 - STD2/(np.sqrt(EndingParam))
+
+                relativeError = STD1/MEAN1 
+                print(i,"Iterations - Relative Error", relativeError )
+#                 if ((exchProb > 0) & (STD/MEAN < 0.05) ) : # If exchange update is allowed, this part cancels it at will at some point
+#                     exchProb = 0
+#                     print('No more exchange at', i)
+                #if the fluctuations are small and the predictions are stable, stop the code
+                if ((relativeError < error) & (lowMax > upMin)):
+                    stop = True
+                    print('Error = ', relativeError, '--- Stopped at i = ', i)
+                    
+            '''Plots paths'''
+            p1 = BigPath[:,:pathLength]
+            p2 = BigPath[:,pathLength:]
+            axarr[0].plot(range(pathLength) , p1[0,:],'-')
+            axarr[1].plot(range(pathLength) , p2[0,:],'-')
+            # if stop == False:
+                # plt.clf()
+                # plt.show()
+                # plt.pause(0.01)
+                
+    return BigPath[:,:pathLength], BigPath[:,pathLength:], np.array(S_arr), Perm, np.array(Kin_arr) , np.array(Pot_arr)
+
+
+
+
+
+
 '''------------------Plotting functions-useful for debugging---------------------'''
 def PlotConvergence(S_arr, Kin_arr, Pot_arr):
     ''' Plot convergence
@@ -591,6 +731,7 @@ def PlotConvergence(S_arr, Kin_arr, Pot_arr):
     fig, ax = plt.subplots(1,1)
     NumDat = 200
     size_S = len(S_arr[-NumDat:])
+
     ax.plot(range(size_S),(S_arr[-NumDat:]/pathLength),'r')
     ax.plot(range(size_S),tau*Kin_arr[-NumDat:]/pathLength,'b.')
     ax.plot(range(size_S),tau*Pot_arr[-NumDat:]/pathLength,'k.')
@@ -600,19 +741,20 @@ def PlotConvergence(S_arr, Kin_arr, Pot_arr):
     ax.set_xlabel('Iterations ($\\times'+ repr(NumMeasures) +'$)')
 
 def PlotPaths(p1,p2):
-	''' Plot electron paths in x
-	 Inputs:
-	 Return:
+    ''' Plot final obtained paths
+     Inputs: S_arr - action array
+     Kin_arr - kinetic array
+     Pot_array -kinetic array
+     Return:
+      '''
+    pathLength = len(p1[0,:])
+    fig, ax = plt.subplots(1,1) ; p1 = np.roll(p1,-60,(1)) ; p2 = np.roll(p2,-60,(1))
 
-	'''
-	pathLength = len(p1[0,:])
-	fig, ax = plt.subplots(1,1)
+    ax.plot( p1[0,:], np.array(range(pathLength))*tau ,'b.')
+    ax.plot( p2[0,:], np.array(range(pathLength))*tau ,'r.')
 
-	ax.plot( p1[0,:], np.array(range(pathLength))*tau ,'b.')
-	ax.plot( p2[0,:], np.array(range(pathLength))*tau ,'r.')
-
-	ax.set_ylabel('$\\tau*(ins)$')
-	ax.set_xlabel('$x (nm)$')
+    ax.set_ylabel('$\\tau*(ins)$')
+    ax.set_xlabel('$x (nm)$')
 
 
 '''-----------------------------------------Execute PIMC-----------------------------------------'''
@@ -620,7 +762,7 @@ def PlotPaths(p1,p2):
 ## -----------------------List of Constants------------------
 # """Parameters, units: ueV, nm, ns"""
 
-print("Setting initial constants")
+print('Setting initial constants')
 eec = 1.23*10**5
 print('Electron-electron coupling constant (eec) =', eec, 'ueV')
 me = 5.686 * 10 **(-6) # ueV ns^2/nm^2 - electron mass
@@ -703,14 +845,26 @@ min_array2 = CreateMinArray(pathLength)
 print('Executing PIMC')
 '''Executing PIMC on multiple machines'''
 start_time = time.time()
-p1,p2,S_arr,Perm, Kin_arr,Pot_arr= PIMC(MaxRun
-                						,pathLength
-                						,NumMeasures
-                						,T_length
-                						,crossings 
-                						,error
-                						,exchProb
-                                        ,V_HRL)	
+
+if crossings%2 == 1:
+    p1,p2,S_arr,Perm, Kin_arr,Pot_arr= AntiSymPIMC(MaxRun
+                    						,pathLength
+                    						,NumMeasures
+                    						,T_length
+                    						,crossings 
+                    						,error
+                    						,exchProb
+                                            ,V_HRL)	
+else:
+    p1,p2,S_arr,Perm, Kin_arr,Pot_arr= PIMC(MaxRun
+                                        ,pathLength
+                                        ,NumMeasures
+                                        ,T_length
+                                        ,crossings 
+                                        ,error
+                                        ,exchProb
+                                        ,V_HRL) 
+
 
 print("Parity ----", Perm)
 print("Value of the mean. ----"
@@ -731,6 +885,7 @@ PlotPaths(p1,p2)
 
 from scipy.interpolate import RegularGridInterpolator as rgi
 HRL_Potential = 'old_UNSW4_1st withBG TEST ephiQWM UNSW4_1st structure 2nm 800x800 - 10-4-12-4.npz'
+HRL_Potential = 'UNSW4_1st withBG TEST ephiQWM for VX1_1V UNSW4_1st structure 2nm 800x800 - 10-4-12-4.npz'
 '''Define grid and HRL potential'''
 xs = np.load(HRL_Potential)['xs']
 ys = np.load(HRL_Potential)['ys']
