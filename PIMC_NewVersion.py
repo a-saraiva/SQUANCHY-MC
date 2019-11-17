@@ -86,7 +86,7 @@ def SetPlotParams():
     plt.rcParams['axes.formatter.use_mathtext'] = False
     plt.rcParams['figure.autolayout'] = True
     # plt.rcParams['figure.figsize'] =  8.3, 6.8
-    plt.rcParams['figure.figsize'] =  6.8, 8.3
+    plt.rcParams['figure.figsize'] =  5, 6
 # %%
 SetPlotParams()
 
@@ -117,10 +117,10 @@ def generate_paths_N_crossings(N, crossings):
 
         
     pathy1 = np.random.uniform(-12,12,N)
-    pathz1 = np.random.uniform(-2,-0,N)
+    pathz1 = np.random.uniform(-6,-0.5,N)
     
     pathy2 = np.random.uniform(-12,12,N)
-    pathz2 = np.random.uniform(-2,-0,N)
+    pathz2 = np.random.uniform(-6,-0.5,N)
     
     path1 = np.array([pathx1,pathy1,pathz1])
     path2 = np.array([pathx2,pathy2,pathz2])
@@ -304,42 +304,36 @@ def exchangeUpdate( Perm , path1 ,path2 ):
     Inputs:
     '''
     N = len(path1[0,:])
-    arr = np.arange(1,N-2,4)
-    np.random.shuffle(arr)
-    randTimes= np.sort(arr[:2])
+
+
+    randTimes= np.random.randint(1,N-1,2)
+    randTimes= np.sort(randTimes)
+    throw = True
+    while (randTimes[0] == randTimes[1]) :
+         randTimes= np.random.randint(1,N-1,2)
+         randTimes= np.sort(randTimes)
+
     delta_s = 0
     
     for randomTime in randTimes:
         #Computing previous kinetic components at randomTime
-	    k1 = (.5/(4*tau))*np.matmul(np.transpose(m),(path1[:,randomTime]-path1[:,randomTime-2])**2)
-	    k2 = (.5/(4*tau))*np.matmul(np.transpose(m),(path2[:,randomTime]-path2[:,randomTime-2])**2)
-
-	    k1 += (.5/(4*tau))*np.matmul(np.transpose(m),(path1[:,randomTime+1]-path1[:,randomTime-1])**2)
-	    k2 += (.5/(4*tau))*np.matmul(np.transpose(m),(path2[:,randomTime+1]-path2[:,randomTime-1])**2)
-	    
-	    #Computing new kinetic components after exchange at randomTime
-	    nk1 = (.5/(4*tau))*np.matmul(np.transpose(m),(path2[:,randomTime]-path1[:,randomTime-2])**2)
-	    nk2 = (.5/(4*tau))*np.matmul(np.transpose(m),(path1[:,randomTime]-path2[:,randomTime-2])**2)
-
-	    nk1 += (.5/(4*tau))*np.matmul(np.transpose(m),(path2[:,randomTime+1]-path1[:,randomTime-1])**2)
-	    nk2 += (.5/(4*tau))*np.matmul(np.transpose(m),(path1[:,randomTime+1]-path2[:,randomTime-1])**2)
-	    #adding terms to action 
-	    delta_s = delta_s + (nk1 + nk2) - (k1 + k2)
-	    
-
+        k1 = (.5/(tau))*np.matmul(np.transpose(m),(path1[:,randomTime]-path1[:,randomTime-1])**2)
+        k2 = (.5/(tau))*np.matmul(np.transpose(m),(path2[:,randomTime]-path2[:,randomTime-1])**2)
+        
+        #Computing new kinetic components after exchange at randomTime
+        nk1 = (.5/(tau))*np.matmul(np.transpose(m),(path2[:,randomTime]-path1[:,randomTime-1])**2)
+        nk2 = (.5/(tau))*np.matmul(np.transpose(m),(path1[:,randomTime]-path2[:,randomTime-1])**2)
+        #adding terms to action 
+        delta_s = delta_s + (nk1 + nk2) - (k1 + k2)
+        
     if delta_s < 0: # always accepting if action lowered
         TimeInterval = np.arange(randTimes[0],randTimes[1]) 
-        
         tempPath = np.copy(path1[:,TimeInterval])
         path1[:,TimeInterval] = np.copy(path2[:,TimeInterval])
         path2[:,TimeInterval] = np.copy(tempPath)  
-        
-#         print('Minor action' , np.exp(-(delta_s/hbar) ))
-#         print('Sweep accepted -', delta_s )
         return delta_s ,   Perm  #permutation variable changes signs
 
     elif np.random.rand(1) < np.exp(-(delta_s/hbar)): #otherwise accept with PI probability.
-#         print('increased with probability ' , np.exp(-(delta_s/hbar) ))
         TimeInterval = np.arange(randTimes[0],randTimes[1]) 
         tempPath = np.copy(path1[:,TimeInterval])
         path1[:,TimeInterval] = np.copy(path2[:,TimeInterval])
@@ -347,8 +341,8 @@ def exchangeUpdate( Perm , path1 ,path2 ):
         return delta_s ,  Perm
         
     else:
-#         print('Stable with probability ' , np.exp(-(delta_s/hbar) ))      
         return 0 , Perm
+        
     
 def sweepUpdate(path1 ):
     '''
@@ -358,7 +352,8 @@ def sweepUpdate(path1 ):
     shape = np.shape(path1)
     new_path1 = np.zeros(shape)
 
-     # Creating 3N random numbers between [-h/2,h/2]
+    ''' OLd sweep IMPlmentation '''
+    #  # Creating 3N random numbers between [-h/2,h/2]
     rand_r1 = (np.random.rand(3,N-2)-.5)
     rand_r1[0,:] = h[0]*rand_r1[0,:]
     rand_r1[1,:] = h[1]*rand_r1[1,:]
@@ -373,6 +368,17 @@ def sweepUpdate(path1 ):
     new_path1[:,endPath] = np.copy(path1[:,endPath])
          
     return new_path1
+
+        # Creating 3 random numbers between [-h/2,h/2]
+    # rand_r1 = (np.random.rand(3)-.5)
+
+    # rand_r1[0] = h[0]*rand_r1[0]
+    # rand_r1[1] = h[1]*rand_r1[1]
+    # rand_r1[2] = h[2]*rand_r1[2]
+
+    # new_path1[0,1:-1] = path1[0,1:-1] + rand_r1[0]
+    # new_path1[1,1:-1]  = path1[1,1:-1] + rand_r1[1]
+    # new_path1[2,1:-1]  = path1[2,1:-1] + rand_r1[2]
 
 def antiSymSweep(path1,path2,GridFunc,min_array):
     '''Computes the action given two electron paths
@@ -695,7 +701,7 @@ def PlotPaths(p1,p2):
      Return:
       '''
     pathLength = len(p1[0,:])
-    fig, ax = plt.subplots(1,1) ; p1 = np.roll(p1,-60,(1)) ; p2 = np.roll(p2,-60,(1))
+    fig, ax = plt.subplots(1,1) #P; p1 = np.roll(p1,-60,(1)) ; p2 = np.roll(p2,-60,(1))
 
     ax.plot( p1[0,:], np.array(range(pathLength))*tau ,'b.')
     ax.plot( p2[0,:], np.array(range(pathLength))*tau ,'r.')
@@ -847,8 +853,17 @@ def V_hrl(path):
     return interpolate(path.T) + V_step(path[2,:])
 
 fig, ax = plt.subplots(1,1)
-ax.plot(p1[2,:], V_hrl(p1),'rv')
-ax.plot(p1[2,:],ComputePotential(V_HRL, p1, min_array2)  ,'b^')
+T = range(len(p1[2,:]))
+# ax.plot(p1[0,:], V_hrl(p1)+ V_hrl(p2),'rv')
+ax.plot(p1[0,:],ComputePotential(V_HRL, p1, min_array2) ,'b^')
+ax.plot(p2[0,:],ComputePotential(V_HRL, p2, min_array2) ,'rv')
+# K_1 = (.5/tau2)*np.matmul(np.transpose(m),(timeDerivative(p1))**2)
+
+# K_2 = (.5/tau2)*np.matmul(np.transpose(m),(timeDerivative(p2))**2)
+# ax.plot(T[:-1], K_1 ,'k-')
+# ax.plot(T[:-1],K_2, 'y-')
+# ax.plot(T, ee(p1,p2),'g-')
+
 ax.set_xlabel('Z(nm)')
 ax.set_ylabel('$V_z(\\mu eV)$')
 
