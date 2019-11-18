@@ -65,7 +65,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 import os
-
+from scipy import stats
 
 # RC - params . Better plots
 def SetPlotParams():
@@ -98,30 +98,52 @@ def generate_paths_N_crossings(N, crossings):
     pathx1 = np.zeros(N) 
     pathx2 = np.zeros(N) 
     
-    arr = np.arange(50,N-50,100)
-    np.random.shuffle(arr)
-    List= np.sort(arr[:crossings])
-    CrossingPoints = np.zeros(crossings+2)
-    CrossingPoints[0] = 0
-    CrossingPoints[-1] = N
-    CrossingPoints[1:-1] = List
-    CrossingPoints = CrossingPoints.astype(int)
+    # arr = np.arange(100,N-100,200)
+    # np.random.shuffle(arr)
+    # List= np.sort(arr[:crossings])
+    # CrossingPoints = np.zeros(crossings+2)
+    # CrossingPoints[0] = 0
+    # CrossingPoints[-1] = N
+    # CrossingPoints[1:-1] = List
+    CrossingPoints = np.linspace(0,N, crossings +2)
 
+    CrossingPoints = CrossingPoints.astype(int)
+    mean_x1 = -20
+    mean_x2 = -30
+    x_std  = 14
     for i in range(crossings+1):
         if i%2 == 0:
+            # pathx1[CrossingPoints[i]:CrossingPoints[i+1]] = np.random.normal(loc=mean_x1
+                                                                            # ,scale=x_std
+                                                                            # ,size=CrossingPoints[i+1]-CrossingPoints[i])
+            # pathx2[CrossingPoints[i]:CrossingPoints[i+1]] = np.random.normal(loc=mean_x2
+                                                                            # ,scale=x_std
+                                                                            # ,size=CrossingPoints[i+1]-CrossingPoints[i])
+
             pathx1[CrossingPoints[i]:CrossingPoints[i+1]] = np.random.uniform(-60,-20,CrossingPoints[i+1]-CrossingPoints[i])
-            pathx2[CrossingPoints[i]:CrossingPoints[i+1]] = np.random.uniform(-45,5,CrossingPoints[i+1]-CrossingPoints[i])
+            pathx2[CrossingPoints[i]:CrossingPoints[i+1]] = np.random.uniform(-40,5,CrossingPoints[i+1]-CrossingPoints[i])
         else:
-            pathx1[CrossingPoints[i]:CrossingPoints[i+1]] = np.random.uniform(-45,5,CrossingPoints[i+1]-CrossingPoints[i])
+            # pathx1[CrossingPoints[i]:CrossingPoints[i+1]] = np.random.normal(loc=mean_x2
+                                                                            # ,scale=x_std
+                                                                            # ,size= CrossingPoints[i+1]-CrossingPoints[i])
+            # pathx2[CrossingPoints[i]:CrossingPoints[i+1]] = np.random.normal(loc=mean_x1
+                                                                            # ,scale=x_std
+                                                                            # ,size= CrossingPoints[i+1]-CrossingPoints[i])
+
+            pathx1[CrossingPoints[i]:CrossingPoints[i+1]] = np.random.uniform(-40,5,CrossingPoints[i+1]-CrossingPoints[i])
             pathx2[CrossingPoints[i]:CrossingPoints[i+1]] = np.random.uniform(-60,-20,CrossingPoints[i+1]-CrossingPoints[i])
 
-        
+    # pathy1 = np.random.normal(loc=0, scale=10, size=N)
+    # pathy2 = np.random.normal(loc=0, scale=10, size=N)
     pathy1 = np.random.uniform(-12,12,N)
-    pathz1 = np.random.uniform(-6,-0.5,N)
-    
     pathy2 = np.random.uniform(-12,12,N)
-    pathz2 = np.random.uniform(-6,-0.5,N)
     
+    pathz1 = np.random.normal(loc=-1, scale=0.5, size=N)
+    pathz2 = np.random.normal(loc=-1, scale=0.5, size=N)
+    
+    # pathz2 = np.random.uniform(-6,-0.5,N)
+    # pathz1 = np.random.uniform(-6,-0.5,N)
+
     path1 = np.array([pathx1,pathy1,pathz1])
     path2 = np.array([pathx2,pathy2,pathz2])
     Perm = (-1)**(crossings)
@@ -164,9 +186,9 @@ def CreateMinArray(pathLenght):
     '''
     mins= np.array([min(XS),min(YS),min(ZS)])
     min_array = np.zeros((3,pathLenght))
-    min_array[0,:] +=  roundGrid(mins[0],0.4) 
-    min_array[1,:] +=  roundGrid(mins[1],0.4)  
-    min_array[2,:] +=  roundGrid(mins[2],0.1) 
+    min_array[0,:] +=  roundGrid(mins[0],dXS) 
+    min_array[1,:] +=  roundGrid(mins[1],dXS)  
+    min_array[2,:] +=  roundGrid(mins[2],dZS) 
     min_array = min_array.astype(int)
     return min_array
 
@@ -179,9 +201,9 @@ def ComputePotential(Grid_Func, path, min_array):
     Return: The Grid 
     '''
     #Get indices of the paths in XS,YS,ZS coordinates
-    argsXY = roundGrid(path[:-1,:],0.4)  - min_array[:-1,:]
+    argsXY = roundGrid(path[:-1,:],dXS)  - min_array[:-1,:]
     argsXY = argsXY.astype(int)
-    argsZ = roundGrid(path[-1,:],0.1) - min_array[-1,:]
+    argsZ = roundGrid(path[-1,:],dZS) - min_array[-1,:]
 #     argZ = np.round(path[-1,:]*10).astype(int) - min_array[-1,:]
     argZ = argsZ.astype(int)
     argZ[argZ > Z_max] = Z_max
@@ -292,10 +314,117 @@ def find_Grid_Total_action(path1,path2,Perm,GridFunc, minArray):
 
 '''------------------------------------- Updates --------------------------------'''
 
-"""
-One sweep consists of trying N times changing a random element in the array path (size of this change depends on h),
-each time accepting/refusing according to Metropolis. 
-"""
+
+'''Gaussian Update'''
+def getGaussianDistribution(path,Mvec):
+    ''' Sample new path according to the kinetic propagator in the gaussian distribution
+     Inputs: path (3*N array) , Mvec(3-array)
+     Return: randPath(3*(N-2) arra)
+
+    '''
+    init = path[:,0]
+    end = path[:,-1]
+    
+    timelength = len(path[0,:])
+    times = np.linspace(1,  timelength-2, timelength-2)
+
+    #Reshaping in matrix form for multiplication
+    times1 = times.reshape(1,-1) 
+    init1 = init.reshape(-1,1) 
+    end1 = end.reshape(-1,1) 
+    Mvec1 = Mvec.reshape(-1,1)
+    
+    #harmonic mean for variance computation
+    timeArr = np.array([times1,times1[:,::-1]])[:,0,:]
+    harm = stats.hmean(timeArr,axis = 0).reshape(-1,1)
+    
+    #Computing expected mean and variance
+    rmean = (1/(timelength-1))*(np.matmul(init1,times1[:,::-1])+ np.matmul(end1,times1 ))
+    sigma = 0.5*(tau*hbar)*(np.matmul((1/Mvec1),harm.T))
+    
+    #Creating new path
+    newPath = np.zeros(np.shape(path))
+    newPath[:,1:-1] = np.random.normal(rmean, np.sqrt(sigma))
+    #Fixing boundaries
+    newPath[:,0] = np.copy(init)
+    newPath[:,-1] = np.copy(end)
+    return newPath
+
+def gaussianUpdate(path1,path2,GridFunc,min_array):
+    '''Samples a gaussian probability according to the kinetic propagator and replaces it for path1 if it reduces the
+       potential energy
+       Inputs: Path1 , Path2: 3*N-arrays
+               Sold - old action (float)
+       outputs: newPath1, newPath2 (3N-arrays)
+                delta_s - difference between new action and old action
+    '''
+    
+    #sampling new paths according to gaussian distribution
+    # if  np.random.rand(1) > .5  :
+    new_path1 = getGaussianDistribution(path1,m)
+    new_path2 = path2
+    old_pot = np.sum(ComputePotential(GridFunc, path1, min_array))
+    new_pot = np.sum(ComputePotential(GridFunc, new_path1, min_array))
+    # else:
+    #     new_path1 = path1
+    #     new_path2 = getGaussianDistribution(path2,m)
+    #     old_pot = np.sum(ComputePotential(GridFunc, path2, min_array))
+    #     new_pot = np.sum(ComputePotential(GridFunc, new_path2, min_array))
+    
+    old_int =  np.sum(ee(path1,path2))
+    new_int =  np.sum(ee(new_path1,new_path2))
+    #add action
+    delta_s = tau*( (new_pot + new_int) - (old_pot + old_int))
+
+    if delta_s < 0: # always accepting if action lowered
+        return new_path1 , new_path2 , delta_s
+    elif np.random.rand(1) < np.exp(-(delta_s/hbar)): #otherwise accept with PI probability.
+        return new_path1 , new_path2 , delta_s
+    else: 
+        return path1 , path2, 0
+
+'''CM-Update'''
+
+def CMupdate(path1,path2,GridFunc,min_array):
+    ''' Sweeps the Center of mass of path1 in order to reduce the potential leaving the energy static
+        Inputs: path1, path2
+                GridFunc ,min_array : Necessary to compute potential
+        Output: newPath1, newPath2
+    '''
+    N = len(path1[0,:])
+    # select a 3-random vector for displacement
+    rand_r1 = (np.random.rand(3)-.5)
+    rand_r1[0] = h[0]*rand_r1[0]
+    rand_r1[1] = h[1]*rand_r1[1]
+    rand_r1[2] = h[2]*rand_r1[2]
+    
+    new_path1 = np.zeros(np.shape(path1))
+    new_path2 = np.zeros(np.shape(path1))
+    #Sweep
+    new_path1[0,:] = path1[0,:] + rand_r1[0]
+    new_path1[1,:]  = path1[1,:] + rand_r1[1]
+    new_path1[2,:]  = path1[2,:] + rand_r1[2]
+    new_path2 = path2 
+    
+    #Compute action
+    old_pot = np.sum(ComputePotential(GridFunc, path1, min_array))
+    new_pot = np.sum(ComputePotential(GridFunc, new_path1, min_array))
+    
+    old_int =  np.sum(ee(path1,path2))
+    new_int =  np.sum(ee(new_path1,new_path2))
+    
+    delta_s = tau*( (new_pot + new_int) - (old_pot + old_int))
+    
+    #Acceptance condition
+    if delta_s < 0: # always accepting if action lowered
+        path1 = new_path1
+        return  delta_s
+    elif np.random.rand(1) < np.exp(-(delta_s/hbar)): #otherwise accept with PI probability.
+        path1 = new_path1     
+        return  delta_s
+    else:
+        return 0
+    
 
 
 
@@ -481,17 +610,29 @@ def PIMC( NumRun
     #Paths_1 = []
     #Paths_2 = []
 #     fig, axarr = plt.subplots(2,1)
-
-    EndingParam = 20 #decides how many parameters to measure when expecting for convergence of the code 
+    CMprob = 0.2
+    EndingParam = 10 #decides how many parameters to measure when expecting for convergence of the code 
+    convergeNumber = 5
     i = 0
     stop = False
     while (i < NumRun+1) & (stop == False): #there is an stop signal that tells the code if desired
         i = i +1 
+        randUpdate = np.random.rand(1)
         
         '''Execute update half of the cases'''
-        if np.random.rand(1) < exchProb:
-
-            deltaS , Perm = exchangeUpdate(Perm, p1 , p2)
+        if randUpdate  < exchProb:
+            deltaS , Perm =  exchangeUpdate(Perm, p1 , p2)
+        elif randUpdate < CMprob + exchProb:
+            if np.random.rand(1) < 0.5:
+                deltaS = CMupdate( p1
+                                  ,p2
+                                  ,V_HRL
+                                  ,min_array2)
+            else:
+                 deltaS = CMupdate(p2
+                                  ,p1
+                                  ,V_HRL
+                                  ,min_array2)
 
         else:
 
@@ -507,10 +648,21 @@ def PIMC( NumRun
             pstart2 = rolled_p2[:, :T_length] 
             
             #make sweep only with the fist T components in the array
-            pp1 , pp2 , deltaS = sweep( pstart1
-                                      , pstart2 
-                                      , V_HRL
-                                      , min_array)
+            if np.random.rand(1) < 0.5:
+                pp1 , pp2 , deltaS= gaussianUpdate( pstart1
+                                                    ,pstart2 
+                                                    ,V_HRL
+                                                    ,min_array)
+            else:
+                pp2 , pp1 , deltaS= gaussianUpdate( pstart2
+                                                   ,pstart1 
+                                                   ,V_HRL
+                                                   ,min_array)
+
+            # pp1 , pp2 , deltaS = sweep( pstart1
+            #                           , pstart2 
+            #                           , V_HRL
+            #                           , min_array)
             
             #update the sweep result
             rolled_p1[:, :T_length] = np.copy(pp1)
@@ -518,7 +670,6 @@ def PIMC( NumRun
             #Unroll vector
             p1 = np.roll(rolled_p1,rTime,(1))
             p2 = np.roll(rolled_p2,rTime,(1))
-
 
         '''Take measurements every 10000 operations'''
         if i%NumMeasures == 0:
@@ -530,25 +681,8 @@ def PIMC( NumRun
             Pot_arr.append(PotentialTotalEnergy(p1,p2,V_HRL, min_array2))
 
             #take measurements to decide if it is convergence has been reached 
-            if i//NumMeasures > 2*EndingParam:
-                s1 = np.array(S_arr[-EndingParam:])
-                s2 = np.array(S_arr[-2*EndingParam:-EndingParam])
-
-                STD1 = np.std(s1)
-                MEAN1 = np.mean(s1)
-
-                STD2 = np.std(s2)
-                MEAN2 = np.mean(s2)
-
-                lowMax = MEAN1 + STD1/(np.sqrt(EndingParam))
-                upMin = MEAN2 - STD2/(np.sqrt(EndingParam))
-
-                relativeError = STD1/MEAN1 
-                print(i,"Iterations - Relative Error", relativeError )
-#  
-                if ((relativeError < error) & (lowMax > upMin)):
-                    stop = True
-                    print('Error = ', relativeError, '--- Stopped at i = ', i)
+            if i//NumMeasures > convergeNumber*EndingParam:
+                stop = checkConvergence(i,S_arr, EndingParam, convergeNumber)
                     
             '''Plots paths'''
 #             axarr[0].plot(range(pathLength) , p1[0,:],'-')
@@ -593,18 +727,22 @@ def AntiSymPIMC( NumRun
     #Paths_1 = []
     #Paths_2 = []
     fig, axarr = plt.subplots(2,1)
-
-    EndingParam = 20 #decides how many parameters to measure when expecting for convergence of the code 
+    CMprob = 0.2
+    EndingParam = 10 #decides how many parameters to measure when expecting for convergence of the code 
     i = 0
     stop = False
     while (i < NumRun+1) & (stop == False): #there is an stop signal that tells the code if desired
         i = i +1 
+        randUpdate = np.random.rand(1)
         
         '''Execute update half of the cases'''
-        if np.random.rand(1) < exchProb:
-
-            deltaS , Perm = exchangeUpdate(Perm, p1 , p2)
-
+        if randUpdate  < exchProb:
+            deltaS , Perm = exchangeUpdate(Perm, BigPath[:,:pathLength-1] , BigPath[:,pathLength+1:])
+        elif randUpdate < CMprob + exchProb:  
+            deltaS = CMupdate( BigPath
+                              ,MirrorPath
+                              ,V_HRL
+                              ,min_array_BIG )
         else:
 
             '''Pic up a T_length-path randomly to sweep'''
@@ -619,16 +757,23 @@ def AntiSymPIMC( NumRun
             pstart2 = rolled_p2[:, :T_length] 
             
             #make sweep only with the fist T components in the array
-            pp1 , pp2 , deltaS = antiSymSweep(pstart1
-                                             ,pstart2
-                                             ,V_HRL
-                                             ,min_array)
+
+            # pp1 , pp2 , deltaS = antiSymSweep(pstart1
+            #                                  ,pstart2
+            #                                  ,V_HRL
+            #                                  ,min_array)
+            pp1 , pp2 , deltaS= gaussianUpdate( pstart1
+                                               ,pstart2 
+                                               ,V_HRL
+                                               ,min_array)
             #update the sweep result
             rolled_p1[:, :T_length] = np.copy(pp1)
             BigPath = np.roll(rolled_p1,rTime,(1))
 
         '''Take measurements every 10000 operations'''
         if i%NumMeasures == 0:
+            p1 = BigPath[:,:pathLength]
+            p2 = BigPath[:,pathLength:]
             #save action values to check convergence
             S_tot = find_Grid_Total_action(p1,p2,Perm,V_HRL, min_array2)
 
@@ -637,29 +782,11 @@ def AntiSymPIMC( NumRun
             Pot_arr.append(PotentialTotalEnergy(p1,p2,V_HRL, min_array2))
 
             #take measurements to decide if it is convergence has been reached 
-            if i//NumMeasures > 2*EndingParam:
-                s1 = np.array(S_arr[-EndingParam:])
-                s2 = np.array(S_arr[-2*EndingParam:-EndingParam])
+            if i//NumMeasures > convergeNumber*EndingParam:
+                stop = checkConvergence(i,S_arr, EndingParam, convergeNumber)
 
-                STD1 = np.std(s1)
-                MEAN1 = np.mean(s1)
-
-                STD2 = np.std(s2)
-                MEAN2 = np.mean(s2)
-
-                lowMax = MEAN1 + STD1/(np.sqrt(EndingParam))
-                upMin = MEAN2 - STD2/(np.sqrt(EndingParam))
-
-                relativeError = STD1/MEAN1 
-                print(i,"Iterations - Relative Error", relativeError )
-
-                if ((relativeError < error) & (lowMax > upMin)):
-                    stop = True
-                    print('Error = ', relativeError, '--- Stopped at i = ', i)
-                    
             '''Plots paths'''
-            p1 = BigPath[:,:pathLength]
-            p2 = BigPath[:,pathLength:]
+
             axarr[0].plot(range(pathLength) , p1[0,:],'-')
             axarr[1].plot(range(pathLength) , p2[0,:],'-')
             # if stop == False:
@@ -669,8 +796,45 @@ def AntiSymPIMC( NumRun
                 
     return BigPath[:,:pathLength], BigPath[:,pathLength:], np.array(S_arr), Perm, np.array(Kin_arr) , np.array(Pot_arr)
 
+def GetAproxValue(s1,EndingParam):
+    '''
+     Inputs:action
+     Return:
 
+    '''
+    Std = np.std(s1)
+    Mean = np.mean(s1)
+    upVal = Mean + Std/(np.sqrt(EndingParam))
+    minVal = Mean - Std/(np.sqrt(EndingParam))
+    return upVal , minVal
 
+def checkConvergence(i,S_arr, EndingParam, convergeNumber):
+    ''' Stops the code if it has reached convergence 
+     Inputs:
+     Return:
+
+    '''
+    s1 = np.array(S_arr[-EndingParam:])
+    up = [] ; mini = []
+    for j in range(convergeNumber):
+        s1 = np.array(S_arr[-(j+1)*EndingParam:-j*EndingParam-1])
+        upVal , minVal = GetAproxValue(s1,EndingParam)
+        up.append(upVal)
+        mini.append(minVal)
+
+    print(i
+        ,"Iterations -V Mean Energy: "
+        , np.mean(S_arr[-10:])/pathLength
+        , '+/-'
+        ,np.std(S_arr[-10:])/(pathLength*np.sqrt(10))
+        , 'ueV')
+    
+    stop = False
+    # if ((relativeError < error) & (lowMax > upMin)):
+    if (np.min(up) > np.max(mini)):
+        stop = True
+        print("Energy", s1[-1]/pathLength, '--- Stopped at i = ', i)
+    return stop
 
 
 
@@ -701,7 +865,7 @@ def PlotPaths(p1,p2):
      Return:
       '''
     pathLength = len(p1[0,:])
-    fig, ax = plt.subplots(1,1) #P; p1 = np.roll(p1,-60,(1)) ; p2 = np.roll(p2,-60,(1))
+    fig, ax = plt.subplots(1,1) ; p1 = np.roll(p1,-60,(1)) ; p2 = np.roll(p2,-60,(1))
 
     ax.plot( p1[0,:], np.array(range(pathLength))*tau ,'b.')
     ax.plot( p2[0,:], np.array(range(pathLength))*tau ,'r.')
@@ -716,7 +880,7 @@ def PlotPaths(p1,p2):
 # """Parameters, units: ueV, nm, ns"""
 
 print('Setting initial constants')
-eec = 1.23*10**5
+eec = 1.23*(10**5)
 print('Electron-electron coupling constant (eec) =', eec, 'ueV')
 me = 5.686 * 10 **(-6) # ueV ns^2/nm^2 - electron mass
 print('me = ', repr(np.round(me,9)), 'ueV*ns^2/nm^2' )
@@ -756,6 +920,9 @@ V_HRL_Grid = np.load('V_HRL_Grid.npz')
 XS = V_HRL_Grid['XS']
 YS = V_HRL_Grid['YS']
 ZS = V_HRL_Grid['ZS']
+dXS = XS[1] - XS[0]
+dZS = ZS[1] - ZS[0]
+
 Grid = V_HRL_Grid['Grid']
 V_HRL= V_HRL_Grid['V_HRL']
 Z_max = np.argmax(ZS)
@@ -783,7 +950,7 @@ pathLength =  int(Inputs[1])
 NumMeasures =  int(Inputs[2])
 T_length =  int(Inputs[3])
 crossings =  int(Inputs[4])
-error =  Inputs[5]
+convergeNumber =  int(Inputs[5])
 tau =  Inputs[6] 
 tau2 = tau**2
 h = np.array([ Inputs[7], Inputs[8], Inputs[9]])
@@ -794,18 +961,18 @@ print('Displacement vector (h) =', h , 'nm')
 
 min_array = CreateMinArray(T_length)
 min_array2 = CreateMinArray(pathLength)
-
+min_array_BIG = CreateMinArray(2*pathLength)
 print('Executing PIMC')
 '''Executing PIMC on multiple machines'''
 start_time = time.time()
 
-if crossings%2 == 1:
+if (crossings)%2 == 1:
     p1,p2,S_arr,Perm, Kin_arr,Pot_arr= AntiSymPIMC(MaxRun
                     						,pathLength
                     						,NumMeasures
                     						,T_length
                     						,crossings 
-                    						,error
+                    						,convergeNumber
                     						,exchProb
                                             ,V_HRL)	
 else:
@@ -814,7 +981,7 @@ else:
                                         ,NumMeasures
                                         ,T_length
                                         ,crossings 
-                                        ,error
+                                        ,convergeNumber
                                         ,exchProb
                                         ,V_HRL) 
 
@@ -823,7 +990,7 @@ print("Parity ----", Perm)
 print("Value of the mean. ----"
 	, np.mean(S_arr[-10:])/pathLength
 	, '+/-'
-	,np.std(S_arr[-10:])/pathLength
+	,np.std(S_arr[-10:])/(pathLength*np.sqrt(10))
 	, 'ueV')
 print("--- %s seconds ---" % (time.time() - start_time))
 
@@ -838,7 +1005,7 @@ PlotPaths(p1,p2)
 
 from scipy.interpolate import RegularGridInterpolator as rgi
 HRL_Potential = 'old_UNSW4_1st withBG TEST ephiQWM UNSW4_1st structure 2nm 800x800 - 10-4-12-4.npz'
-HRL_Potential = 'UNSW4_1st withBG TEST ephiQWM for VX1_1V UNSW4_1st structure 2nm 800x800 - 10-4-12-4.npz'
+# HRL_Potential = 'UNSW4_1st withBG TEST ephiQWM for VX1_1V UNSW4_1st structure 2nm 800x800 - 10-4-12-4.npz'
 '''Define grid and HRL potential'''
 xs = np.load(HRL_Potential)['xs']
 ys = np.load(HRL_Potential)['ys']
@@ -862,7 +1029,7 @@ ax.plot(p2[0,:],ComputePotential(V_HRL, p2, min_array2) ,'rv')
 # K_2 = (.5/tau2)*np.matmul(np.transpose(m),(timeDerivative(p2))**2)
 # ax.plot(T[:-1], K_1 ,'k-')
 # ax.plot(T[:-1],K_2, 'y-')
-# ax.plot(T, ee(p1,p2),'g-')
+ax.plot(p1[0,:], ee(p1,p2),'go')
 
 ax.set_xlabel('Z(nm)')
 ax.set_ylabel('$V_z(\\mu eV)$')

@@ -1,0 +1,11 @@
+2e6 #MaxRun	- int
+1000 #pathLength - int
+2000 #NumMeasures - int
+5 #T_length - int : Leght of time slice sweep (pathLength/500 gives fast convergence)
+3 #crossings - int
+6 #Converge number- float
+1e-6 #tau - float
+1.2 #hx -  float
+1 #hy - float
+0.02 #hz -float
+0 # exchange probability
